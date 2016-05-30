@@ -5,7 +5,7 @@
 #
 #  Created: Mon May 30 10:20:36 2016
 #  Copyright  2016  Tim Niemueller [www.niemueller.de]
-############################################################################/
+##########################################################################
 
 #  This program is free software; you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -21,10 +21,10 @@
 
 # Assumes $SIMSTICK_UPDATE_PATH to be set by simstick-update (stage 0)
 
-GIT_HASH_OLD = $1
-GIT_HASH_NEW = $2
+GIT_HASH_OLD=$1
+GIT_HASH_NEW=$2
 
-if [ -z "$GIT_HASH_OLD" || -z $GIT_HASH_NEW" ]; then
+if [[ -z "$GIT_HASH_OLD" || -z "$GIT_HASH_NEW" ]]; then
 		echo "FAIL|rcll-simstick-update: failed to determine git hashes"
 fi
 
@@ -36,7 +36,13 @@ if [ ! -d updates.d ]; then
 fi
 
 for f in updates.d/*; do
-		$f
-fi
+		if [[ "$f" != *"~" ]]; then
+				$f
+		fi
+done
+
+echo -e "\n"
+echo -e "\033[1;34m *** SimStick update complete. Check log for errors. ***\033[0m"
+echo
 
 popd >/dev/null

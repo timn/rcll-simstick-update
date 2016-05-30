@@ -1,9 +1,9 @@
 #!/bin/bash
 
 ##########################################################################
-#  simstick-update-stage1 - update simtick repo and invoke stage 2
+#  kill-simulation - kill simulation before performing updates
 #
-#  Created: Mon May 30 10:20:12 2016
+#  Created: Mon May 30 21:57:03 2016
 #  Copyright  2016  Tim Niemueller [www.niemueller.de]
 ##########################################################################
 
@@ -21,18 +21,25 @@
 
 # Assumes $SIMSTICK_UPDATE_PATH to be set by simstick-update (stage 0)
 
-# Update simstick update repository itself
-pushd $SIMSTICK_UPDATE_PATH >/dev/null
 source functions.sh
 
-print_sechead "Checking for simstick updater updates"
+print_sechead "Killing running Simulation"
 
-git_repo_check || exit $?
+if [ -z "$FAWKES_DIR" ];  then
+	 echo "FAIL|$(basename $0): FAWKES_DIR has not been set as env var"
+	 exit 1
+fi
 
-GIT_HASH_OLD=$(git_repo_hash)
-git_repo_pull || exit $?
-GIT_HASH_NEW=$(git_repo_hash)
+echo -n "Checking if simulation is running... "
 
-exec $SIMSTICK_UPDATE_PATH/simstick-update-stage2 $GIT_HASH_OLD $GIT_HASH_NEW
+GAZEBO_PID=$(ps ax | grep "gzclient $GAZEBO_WORLD_FILE" | grep -v grep | cut -f1 -d" ")
 
-popd >/dev/null
+if [ -z "$GAZEBO_PID" ]; then
+		echo "not running"
+else
+		echo "running"
+		echo "Stopping in $FAWKES_DIR"
+		pushd $FAWKES_DIR/bin >/dev/null
+		./gazsim.bash -x kill
+		popd >/dev/null
+fi

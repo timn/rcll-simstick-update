@@ -1,9 +1,9 @@
 #!/bin/bash
 
 ##########################################################################
-#  simstick-update-stage1 - update simtick repo and invoke stage 2
+#  update-refbox - update llsf-refbox
 #
-#  Created: Mon May 30 10:20:12 2016
+#  Created: Mon May 30 21:58:52 2016
 #  Copyright  2016  Tim Niemueller [www.niemueller.de]
 ##########################################################################
 
@@ -21,18 +21,20 @@
 
 # Assumes $SIMSTICK_UPDATE_PATH to be set by simstick-update (stage 0)
 
-# Update simstick update repository itself
-pushd $SIMSTICK_UPDATE_PATH >/dev/null
 source functions.sh
+print_sechead "Updating referee box"
 
-print_sechead "Checking for simstick updater updates"
+SCRIPT_NAME=$(basename $0)
+
+if [ -z "$LLSF_REFBOX_DIR" ];  then
+	 print_fail "$SCRIPT_NAME" "LLSF_REFBOX_DIR has not been set as env var"
+	 exit 1
+fi
+
+pushd $LLSF_REFBOX_DIR >/dev/null
 
 git_repo_check || exit $?
+git_repo_fetch || exit $?
+git_repo_pull_cond_build || exit $?
 
-GIT_HASH_OLD=$(git_repo_hash)
-git_repo_pull || exit $?
-GIT_HASH_NEW=$(git_repo_hash)
-
-exec $SIMSTICK_UPDATE_PATH/simstick-update-stage2 $GIT_HASH_OLD $GIT_HASH_NEW
-
-popd >/dev/null
+popd > /dev/null

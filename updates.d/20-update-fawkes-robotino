@@ -1,0 +1,76 @@
+#!/bin/bash
+
+##########################################################################
+#  update-fawkes-robotino - update Fawkes robotino with patches
+#
+#  Created: Mon May 30 21:58:52 2016
+#  Copyright  2016  Tim Niemueller [www.niemueller.de]
+##########################################################################
+
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation; either version 2 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU Library General Public License for more details.
+#
+#  Read the full text in the LICENSE.GPL file in the doc directory.
+
+# Assumes $SIMSTICK_UPDATE_PATH to be set by simstick-update (stage 0)
+
+source functions.sh
+print_sechead "Updating Fawkes"
+
+SCRIPT_NAME=$(basename $0)
+
+if [ -z "$FAWKES_DIR" ];  then
+	 print_fail "$(basename $0)" "FAWKES_DIR has not been set as env var"
+	 exit 1
+fi
+
+pushd $FAWKES_DIR >/dev/null
+
+DO_CLEAN=
+DO_BUILD=
+if [ -d "$SIMSTICK_UPDATE_PATH/patches.d" ]; then
+		echo "Checking for patches"
+		for p in $SIMSTICK_UPDATE_PATH/patches.d/fawkes-robotino-*.patch; do
+				PATCH_NAME=$(basename $p)
+
+				if patch -p1 -N --dry-run --quiet <$p 2>&1 >/dev/null; then
+						echo "--- Applying patch $PATCH_NAME"
+						if patch -p1 -N <$p ; then
+								DO_BUILD=1
+								FLAGS_FILE="${p%.patch}.flags"
+								if [ -e "$FLAGS_FILE" ]; then
+										while read -r flags_line; do
+												if [ "$flags_line" == "clean" ]; then
+														DO_CLEAN=1
+												fi
+										done <"$FLAGS_FILE"
+								fi
+						else
+								print_fail "$SCRIPT_NAME" "Failed to apply patch $PATCH_NAME"
+						fi
+				else
+						echo "Patch $PATCH_NAME already applied"
+				fi
+		done
+
+		if [ -n "$DO_CLEAN" ]; then
+				echo "Cleaning software tree"
+				make -j4 clean || print_fail "$SCRIPT_NAME" "Failed to clean software"
+		fi
+
+		if [ -n "$DO_BUILD" ]; then
+				echo "Building software"
+				make -j4 all gui || print_fail "$SCRIPT_NAME" "Failed to build software"
+		fi
+else
+		echo "No relevant patches found"
+fi
+
+popd > /dev/null
