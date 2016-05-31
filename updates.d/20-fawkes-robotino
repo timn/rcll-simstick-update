@@ -35,8 +35,8 @@ pushd $FAWKES_DIR >/dev/null
 
 DO_CLEAN=
 DO_BUILD=
-if [ -d "$SIMSTICK_UPDATE_PATH/patches.d" ]; then
-		echo "Checking for patches"
+if compgen -G "$SIMSTICK_UPDATE_PATH/patches.d/fawkes-robotino-*.patch" > /dev/null; then
+		echo "Checking for patches to apply"
 		for p in $SIMSTICK_UPDATE_PATH/patches.d/fawkes-robotino-*.patch; do
 				PATCH_NAME=$(basename $p)
 
