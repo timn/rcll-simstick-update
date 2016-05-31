@@ -48,7 +48,7 @@ git_repo_check()
 git_repo_fetch()
 {
 		local REMOTE_URL=$(git config --get remote.origin.url)
-		local REPO_DIR=$(dirname $(pwd))
+		local REPO_DIR=$(pwd)
 
 		echo "Fetching updates in $REPO_DIR"
 		echo "  - remote: $REMOTE_URL"
@@ -89,7 +89,8 @@ git_repo_pull()
 		fi
 		
 		local REMOTE_URL=$(git config --get remote.origin.url)
-		local REPO_DIR=$(dirname $(pwd))
+		local REPO_DIR=$(pwd)
+		local REPO_NAME=$(basename $REPO_DIR)
 
 		local REPO_CHANGED=$(git_repo_changed) || return $?
 
@@ -102,24 +103,27 @@ git_repo_pull()
 						fi
 						;;
 				push)
-						print_fail "git_pull" "Repository contains local changes to push"
+						print_fail "git_pull" "Repository $REPO_NAME contains local changes to push"
 						;;
 				diverged)
-						print_fail "git_pull" "Repository local and remove have diverged"
+						print_fail "git_pull" "Repository $REPO_NAME local and remove have diverged"
 						;;
 				up-to-date)
-						echo "Repository is already up to date"
+						echo "Repository $REPO_NAME is already up to date"
 						;;
 				*)
-						echo "Unknown repository state"
+						echo "Unknown repository state for $REPO_NAME"
+						return 1
 						;;
 		esac
-		
+
 		return 0
 }
 
 git_repo_pull_cond_build()
 {
+		local REPO_DIR=$(pwd)
+		local REPO_NAME=$(basename $REPO_DIR/)
 		local REPO_CHANGED=$(git_repo_changed) || exit $?
 		local BUILD_CMD=${1:-make -j4 all gui}
 		
@@ -131,18 +135,18 @@ git_repo_pull_cond_build()
 						$BUILD_CMD
 						;;
 				push)
-						print_fail "git_repo_pull_cond_build" "Repository contains local changes to push"
+						print_fail "git_repo_pull_cond_build" "Repository $REPO_NAME contains local changes to push"
 						return 1
 						;;
 				diverged)
-						print_fail "git_repo_pull_cond_build" "Repository local and remove have diverged"
+						print_fail "git_repo_pull_cond_build" "Repository $REPO_NAME local and remove have diverged"
 						return 1
 						;;
 				up-to-date)
-						echo "Repository is already up to date"
+						echo "Repository $REPO_NAME is already up to date"
 						;;
 				*)
-						echo "Unknown repository state"
+						echo "Unknown repository state for $REPO_NAME"
 						return 1
 						;;
 		esac
