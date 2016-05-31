@@ -1,0 +1,27 @@
+#!/bin/bash
+
+source functions.sh
+print_sechead "Updating custom ROS packages"
+
+SCRIPT_NAME=$(basename $0)
+
+ROS_PACKAGES="fawkes_msgs rcll_ros_msgs rcll_fawkes_sim_msgs rcll_refbox_peer rcll_fawkes_sim"
+
+ros_detect || exit $?
+
+for p in $ROS_PACKAGES; do
+		echo
+		echo -e "Checking update for \033[1;34m$p\033[0m"
+		ros_package_assert $p || exit $?
+		p_dir=$(ros_package_dir $p) || exit $?
+		ws_dir=$(realpath "$p_dir/../..")
+		pushd $p_dir >/dev/null
+
+		pwd
+		
+		git_repo_check || exit $?
+		git_repo_fetch || exit $?
+		git_repo_pull_cond_build "catkin_make -C $ws_dir --force-cmake --pkg $p" || exit $?
+
+		popd >/dev/null
+done
