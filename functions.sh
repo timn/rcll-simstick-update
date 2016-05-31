@@ -182,3 +182,53 @@ print_sechead()
 		echo -e "\033[1;32m##########################################################################\033[0m"
 		echo
 }
+
+ros_package_assert()
+{
+		local ROS_PACKAGE=$1
+
+		if ! rospack find $ROS_PACKAGE >/dev/null 2>&1 ; then
+				print_fail "ros_detect" "Could not find package $ROS_PACKAGE"
+				return 1
+		fi
+		return 0
+}
+
+ros_package_dir()
+{
+		local ROS_PACKAGE=$1
+		ros_package_assert "$ROS_PACKAGE" || return $?
+		local ROS_PACKAGE_DIR=$(rospack find $ROS_PACKAGE) || return $?
+		echo $ROS_PACKAGE_DIR
+		return 0
+}
+
+ros_detect()
+{
+		if ! type -P rospack ; then
+				print_fail "ros_detect" "Could not detect rospack"
+				return 1
+		fi
+		if [ -z "$ROS_DISTRO" ]; then
+				print_fail "ros_detect" "ROS_DISTRO not set, forgot to source setup.bash?"
+				return 2
+		fi
+		if ! ros_package_assert roscpp ; then
+				print_fail "ros_detect" "Could not find roscpp package, has ROS been built?"
+				return 3
+		fi
+		case $ROS_DISTRO in
+				hydro|indigo|jade|kame)
+						echo "Detected compatible ROS $ROS_DISTRO"
+						;;
+				boxturtle|cturtle|diamondback|electric|fuerte|groovy)
+						print_fail "ros-detect" "Detected old incompatible ROS $ROS_DISTRO"
+						return 4
+						;;
+				*)
+						echo "Detected unknown ROS $ROS_DISTO, just assuming compatibility"
+						;;
+		esac
+		return 0
+}
+
