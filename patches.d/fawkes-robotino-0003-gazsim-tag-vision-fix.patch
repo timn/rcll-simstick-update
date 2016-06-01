@@ -1,0 +1,35 @@
+From 181ca6d021535d24c404f5337e7ba03a4a5d6b7c Mon Sep 17 00:00:00 2001
+From: Frederik Zwilling <zwilling@kbsg.rwth-aachen.de>
+Date: Tue, 12 Apr 2016 22:09:33 +0200
+Subject: [PATCH] gazsim-tag-vision: fixed changing tag-interface assignments
+
+This should solve the problem of robots driving against the MPS during
+align_tag with ground truth tag vision.
+---
+ src/plugins/gazebo/gazsim-tag-vision/gazsim_tag_vision_thread.cpp | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/plugins/gazebo/gazsim-tag-vision/gazsim_tag_vision_thread.cpp b/src/plugins/gazebo/gazsim-tag-vision/gazsim_tag_vision_thread.cpp
+index 0ee65e0..6b20096 100644
+--- a/src/plugins/gazebo/gazsim-tag-vision/gazsim_tag_vision_thread.cpp
++++ b/src/plugins/gazebo/gazsim-tag-vision/gazsim_tag_vision_thread.cpp
+@@ -171,6 +171,7 @@ void TagVisionSimThread::loop()
+         {
+           current_vis_hist = 0;
+         }
++        map_id_if_.erase(info_if_->tag_id(i));
+         current_vis_hist -= visibility_history_increase_per_update_;
+         tag_pos_ifs_[i]->set_visibility_history(current_vis_hist);
+         tag_pos_ifs_[i]->write();
+@@ -183,7 +184,7 @@ void TagVisionSimThread::loop()
+     }
+     info_if_->set_tags_visible(number_found_tags);
+     info_if_->write();
+- }
++  }
+ }
+ 
+ void TagVisionSimThread::on_tag_vision_msg(ConstPosesStampedPtr &msg)
+-- 
+1.9.3
+
