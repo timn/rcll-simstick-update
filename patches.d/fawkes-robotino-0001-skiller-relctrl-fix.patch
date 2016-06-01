@@ -9,10 +9,10 @@ be executed again as one internal variable was not reset.
  src/plugins/skiller/exec_thread.cpp | 1 +
  1 file changed, 1 insertion(+)
 
-diff --git a/src/plugins/skiller/exec_thread.cpp b/src/plugins/skiller/exec_thread.cpp
+diff --git a/fawkes/src/plugins/skiller/exec_thread.cpp b/fawkes/src/plugins/skiller/exec_thread.cpp
 index 93df070..dd49ef2 100644
---- a/src/plugins/skiller/exec_thread.cpp
-+++ b/src/plugins/skiller/exec_thread.cpp
+--- a/fawkes/src/plugins/skiller/exec_thread.cpp
++++ b/fawkes/src/plugins/skiller/exec_thread.cpp
 @@ -500,6 +500,7 @@ SkillerExecutionThread::loop()
  			  m->sender_thread_name());
  	
