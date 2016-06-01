@@ -1,0 +1,2174 @@
+From 13d815e9cb27082d0ef7548b9c4193caac19faaa Mon Sep 17 00:00:00 2001
+From: David Schmidt <david.schmidt@rwth-aachen.de>
+Date: Mon, 29 Feb 2016 10:46:50 +0100
+Subject: [PATCH 01/10] initial commit for gazsim-navgraph-generator
+
+---
+ cfg/conf.d/gazsim.yaml                             |   5 +-
+ src/plugins/gazebo/Makefile                        |   3 +-
+ .../gazebo/gazsim-navgraph-generator/Makefile      |  51 ++++++
+ .../gazsim-navgraph-generator_plugin.cpp           |  44 +++++
+ .../gazsim-navgraph-generator_thread.cpp           | 184 +++++++++++++++++++++
+ .../gazsim-navgraph-generator_thread.h             |  69 ++++++++
+ 6 files changed, 354 insertions(+), 2 deletions(-)
+ create mode 100644 src/plugins/gazebo/gazsim-navgraph-generator/Makefile
+ create mode 100644 src/plugins/gazebo/gazsim-navgraph-generator/gazsim-navgraph-generator_plugin.cpp
+ create mode 100644 src/plugins/gazebo/gazsim-navgraph-generator/gazsim-navgraph-generator_thread.cpp
+ create mode 100644 src/plugins/gazebo/gazsim-navgraph-generator/gazsim-navgraph-generator_thread.h
+
+diff --git a/cfg/conf.d/gazsim.yaml b/cfg/conf.d/gazsim.yaml
+index 5c9e132..d76acaa 100644
+--- a/cfg/conf.d/gazsim.yaml
++++ b/cfg/conf.d/gazsim.yaml
+@@ -164,4 +164,7 @@ gazsim:
+     info-if-name: "/tag-vision/info"
+     number-interfaces: 16
+     visibility-history-increase-per-update: 30
+-    frame: !frame gazsim_tag_vision
+\ No newline at end of file
++    frame: !frame gazsim_tag_vision
++
++  navgraph-generator:
++    tag01: "~/tag_01/gazsim/gps/"
+diff --git a/src/plugins/gazebo/Makefile b/src/plugins/gazebo/Makefile
+index a53765f..314a6a6 100644
+--- a/src/plugins/gazebo/Makefile
++++ b/src/plugins/gazebo/Makefile
+@@ -19,6 +19,7 @@ include $(BASEDIR)/etc/buildsys/config.mk
+ SUBDIRS	= gazsim-light-front gazsim-llsfrbcomm gazsim-puck-detection \
+ 	  gazsim-llsf-control gazsim-llsf-statistics \
+ 	  gazsim-machine-signal gazsim-gripper \
+-	  gazsim-conveyor gazsim-tag-vision
++	  gazsim-conveyor gazsim-tag-vision \
++	  gazsim-navgraph-generator
+ 
+ include $(BUILDSYSDIR)/rules.mk
+diff --git a/src/plugins/gazebo/gazsim-navgraph-generator/Makefile b/src/plugins/gazebo/gazsim-navgraph-generator/Makefile
+new file mode 100644
+index 0000000..421e23f
+--- /dev/null
++++ b/src/plugins/gazebo/gazsim-navgraph-generator/Makefile
+@@ -0,0 +1,51 @@
++#*****************************************************************************
++#               Makefile Build System for Fawkes: Gazsim Navgraph Generator Plugin
++#
++#   Created on Mon Feb 15 11:40:00 2016
++#   Copyright (C) 2016 by David Schmidt
++#
++##*****************************************************************************
++#
++#   This program is free software; you can redistribute it and/or modify
++#   it under the terms of the GNU General Public License as published by
++#   the Free Software Foundation; either version 2 of the License, or
++#   (at your option) any later version.
++#
++#*****************************************************************************
++
++BASEDIR = ../../../..
++
++include $(BASEDIR)/etc/buildsys/config.mk
++include $(BUILDCONFDIR)/tf/tf.mk
++include $(BASEDIR)/fawkes/src/plugins/gazebo/gazebo.mk
++include $(BUILDSYSDIR)/protobuf.mk
++
++LIBS_gazsim_navgraph_generator = fawkescore fawkesutils fawkesaspects fvutils \
++	       fawkestf fawkesinterface fawkesblackboard \
++	       Position3DInterface fawkesgazeboaspect \
++	       TransformInterface SwitchInterface \
++	       RobotinoLightInterface llsf_msgs
++OBJS_gazsim_navgraph_generator = gazsim-navgraph-generator_plugin.o gazsim-navgraph-generator_thread.o
++
++OBJS_all    = $(OBJS_gazsim_navgraph_generator)
++
++ifeq ($(HAVE_GAZEBO)$(HAVE_PROTOBUF)$(HAVE_TF),111)
++  CFLAGS  += $(CFLAGS_TF)
++  LDFLAGS += $(LDFLAGS_TF)
++  CFLAGS  += $(CFLAGS_GAZEBO) $(CFLAGS_PROTOBUF)
++  LDFLAGS += $(LDFLAGS_GAZEBO) $(LDFLAGS_PROTOBUF) -lm $(call boost-lbis-ldflags,system) -lboost_system
++
++  PLUGINS_all = $(PLUGINDIR)/gazsim_navgraph_generator.$(SOEXT)
++else
++  WARN_TARGETS += warning_tf
++endif
++
++ifeq ($(OBJSSUBMAKE),1)
++all: $(WARN_TARGETS)
++.PHONY: warning_tf warning_ros warning_geometry_msgs
++warning_tf:
++	$(SILENT)echo -e "$(INDENT_PRINT)--> $(TRED)Omitting gazsim-navgraph-generator libs" \
++                         "$(TNORMAL) (tf not available)"
++endif
++
++include $(BUILDSYSDIR)/base.mk
+diff --git a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim-navgraph-generator_plugin.cpp b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim-navgraph-generator_plugin.cpp
+new file mode 100644
+index 0000000..6b4c777
+--- /dev/null
++++ b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim-navgraph-generator_plugin.cpp
+@@ -0,0 +1,44 @@
++/***************************************************************************
++ *  gazsim-navgraph-generator_plugin.cpp - Generates navgraph without exploration
++ *
++ *  Created: Mon Feb 15 11:25:00 2016
++ *  Copyright  2016  David Schmidt
++ ****************************************************************************/
++
++/*  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License as published by
++ *  the Free Software Foundation; either version 2 of the License, or
++ *  (at your option) any later version.
++ *
++ *  This program is distributed in the hope that it will be useful,
++ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
++ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ *  GNU Library General Public License for more details.
++ *
++ *  Read the full text in the LICENSE.GPL file in the doc directory.
++ */
++
++#include <core/plugin.h>
++
++#include "gazsim-navgraph-generator_thread.h"
++
++using namespace fawkes;
++
++/** Plugin to ...
++ * @author David Schmidt
++ */
++class GazsimNavgraphGeneratorPlugin : public fawkes::Plugin
++{
++ public:
++  /** Constructor.
++   * @param config Fawkes configuration
++   */
++  GazsimNavgraphGeneratorPlugin(Configuration *config)
++    : Plugin(config)
++  {
++    thread_list.push_back(new GazsimNavgraphGeneratorThread());
++  }
++};
++
++PLUGIN_DESCRIPTION("Gazsim Navgraph Generator Plugin for generating navgraph without exploration phase")
++EXPORT_PLUGIN(GazsimNavgraphGeneratorPlugin)
+diff --git a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim-navgraph-generator_thread.cpp b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim-navgraph-generator_thread.cpp
+new file mode 100644
+index 0000000..c3c0ac8
+--- /dev/null
++++ b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim-navgraph-generator_thread.cpp
+@@ -0,0 +1,184 @@
++/***************************************************************************
++ *  gazsim-navgraph-generator_thread.cpp - Thread for generating navgraph without exploration phase
++ *
++ *  Created: Mon Feb 15 11:31:11 2016
++ *  Copyright  2016  David Schmidt
++ ****************************************************************************/
++
++/*  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License as published by
++ *  the Free Software Foundation; either version 2 of the License, or
++ *  (at your option) any later version.
++ *
++ *  This program is distributed in the hope that it will be useful,
++ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
++ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ *  GNU Library General Public License for more details.
++ *
++ *  Read the full text in the LICENSE.GPL file in the doc directory.
++ */
++
++#include "gazsim-navgraph-generator_thread.h"
++
++//#include <tf/types.h>
++//#include <interfaces/Position3DInterface.h>
++
++using namespace fawkes;
++
++/** @class GazsimNavgraphGeneratorThread "gazsim-navgraph-generator_thread.h"
++ * Thread for generating navgraph without exploration phase.
++ * @author David Schmidt
++ */
++
++/** Constructor. */
++GazsimNavgraphGeneratorThread::GazsimNavgraphGeneratorThread()
++  : Thread("GazsimNavgraphGeneratorThread", Thread::OPMODE_WAITFORWAKEUP),
++    BlockedTimingAspect(BlockedTimingAspect::WAKEUP_HOOK_WORLDSTATE)
++{
++}
++
++void
++GazsimNavgraphGeneratorThread::init()
++{
++  logger->log_debug(name(), "Initializing GazsimNavgraphGenerator Plugin");
++
++  //read config values
++  tag_01_ = config->get_string("/gazsim/navgraph-generator/tag01");
++	/*
++  gazebo_topic_ = config->get_string("/gazsim/topics/tag-vision");
++  tag_if_name_prefix_ = config->get_string("/gazsim/tag-vision/tag-if-name-prefix");
++  info_if_name_ = config->get_string("/gazsim/tag-vision/info-if-name");
++  frame_name_ = config->get_string("/gazsim/tag-vision/frame");
++  number_interfaces_ = config->get_int("/gazsim/tag-vision/number-interfaces");
++  visibility_history_increase_per_update_ = config->get_int("/gazsim/tag-vision/visibility-history-increase-per-update");
++	*/
++  
++  //open interfaces
++  /*
++  info_if_ = blackboard->open_for_writing<fawkes::TagVisionInterface>(info_if_name_.c_str());
++  for(int i = 0; i < number_interfaces_; i++)
++  {
++    std::ostringstream ss;
++    ss << tag_if_name_prefix_.c_str() << i;
++    tag_pos_ifs_[i] = blackboard->open_for_writing<fawkes::Position3DInterface>
++      (ss.str().c_str());
++  } 
++  */
++  
++  //subscribing to gazebo tag-vision messages
++  subscriber_tag_01_ = gazebonode->Subscribe
++    (tag_01_, &GazsimNavgraphGeneratorThread::on_tag_vision_msg, this);
++}
++
++void
++GazsimNavgraphGeneratorThread::finalize()
++{
++  // blackboard->close(pose_if_);
++}
++
++void
++GazsimNavgraphGeneratorThread::loop()
++{
++  if(new_data_)
++  {
++	new_data_ = false;
++	/*
++	//go through all visible tags and write the data into the interfaces
++	std::set<int> used_ifs;
++	for(int i = 0; i < last_msg_.pose_size(); i++)
++	{
++	  gazebo::msgs::Pose pose = last_msg_.pose(i);
++	  int tag_id = pose.id();
++	  //find associated interface or unused interface index
++	  int if_index = -1;
++	  if(map_id_if_.find(tag_id) != map_id_if_.end())
++	  {
++		if_index = map_id_if_[tag_id];
++	  }
++	  else
++	  {
++		for(int j = 0; j < number_interfaces_; j++)
++		{
++		  if(tag_pos_ifs_[j]->visibility_history() <= 0)
++		  {
++			if_index = j;
++			map_id_if_[tag_id] = if_index;
++			break;
++		  }
++		}
++	  }
++	  if(if_index == -1)
++	  {
++		//no interface left to write data
++		logger->log_info(name(), "Not enough interfaces to write all tag-poses to the blackboard.\n");
++		continue;
++	  }
++	  tag_pos_ifs_[if_index]->set_translation(0, pose.position().x());
++	  tag_pos_ifs_[if_index]->set_translation(1, pose.position().y());
++	  tag_pos_ifs_[if_index]->set_translation(2, pose.position().z());
++	  tag_pos_ifs_[if_index]->set_rotation(0, pose.orientation().x());
++	  tag_pos_ifs_[if_index]->set_rotation(1, pose.orientation().y());
++	  tag_pos_ifs_[if_index]->set_rotation(2, pose.orientation().z());
++	  tag_pos_ifs_[if_index]->set_rotation(3, pose.orientation().w());
++	  tag_pos_ifs_[if_index]->set_frame(frame_name_.c_str());
++	  //compute visibility history
++	  int current_vis_hist = tag_pos_ifs_[if_index]->visibility_history();
++	  if(current_vis_hist < 0)
++	  {
++		current_vis_hist = 0;
++	  }
++	  current_vis_hist += visibility_history_increase_per_update_;
++	  tag_pos_ifs_[if_index]->set_visibility_history(current_vis_hist);
++	  tag_pos_ifs_[if_index]->write();
++	  info_if_->set_tag_id(if_index, tag_id);
++	  used_ifs.insert(if_index);
++
++
++	  // publish the transform
++	  tf::Transform transform(tf::Quaternion(pose.orientation().x(),
++											 pose.orientation().y(),
++											 pose.orientation().z(),
++											 pose.orientation().w()),
++							  tf::Vector3(pose.position().x(),
++										  pose.position().y(),
++										  pose.position().z()));
++	  Time time(clock);
++	  std::string tag_frame_name = std::string("tag_")+std::to_string(if_index);
++	  tf::StampedTransform stamped_transform(transform,time,frame_name_,tag_frame_name);
++	  tf_publisher->send_transform(stamped_transform);
++	}
++	//clear tags which became unvisibe and count visible tags
++	int number_found_tags = 0;
++	for(int i = 0; i < number_interfaces_; i++)
++	{
++	  if(used_ifs.find(i) == used_ifs.end())
++	  {
++		//compute visibility history
++		int current_vis_hist = tag_pos_ifs_[i]->visibility_history();
++		if(current_vis_hist > 0)
++		{
++		  current_vis_hist = 0;
++		}
++		current_vis_hist -= visibility_history_increase_per_update_;
++		tag_pos_ifs_[i]->set_visibility_history(current_vis_hist);
++		tag_pos_ifs_[i]->write();
++		info_if_->set_tag_id(i, 0);
++	  }
++	  else
++	  {
++		number_found_tags++;
++	  }
++	}
++	info_if_->set_tags_visible(number_found_tags);
++	info_if_->write();
++	*/
++ }
++}
++
++
++void GazsimNavgraphGeneratorThread::on_tag_vision_msg(ConstPosesStampedPtr &msg)
++{
++  // logger->log_info(name(), "Got new TagVision result from gazebo.\n");
++  last_msg_.CopyFrom(*msg);
++  new_data_ = true;
++}
+diff --git a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim-navgraph-generator_thread.h b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim-navgraph-generator_thread.h
+new file mode 100644
+index 0000000..3bf8966
+--- /dev/null
++++ b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim-navgraph-generator_thread.h
+@@ -0,0 +1,69 @@
++/***************************************************************************
++ *  gazsim-navgraph-generator_thread.h - Thread for generating the navgraph without exploration phase
++ *
++ *  Created: Mon Feb 15 11:27:09 2016
++ *  Copyright  2016  David Schmidt
++ ****************************************************************************/
++
++/*  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License as published by
++ *  the Free Software Foundation; either version 2 of the License, or
++ *  (at your option) any later version.
++ *
++ *  This program is distributed in the hope that it will be useful,
++ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
++ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ *  GNU Library General Public License for more details.
++ *
++ *  Read the full text in the LICENSE.GPL file in the doc directory.
++ */
++
++#ifndef __PLUGINS_GAZSIM_NAVGRAPH_GENERATOR_THREAD_H_
++#define __PLUGINS_GAZSIM_NAVGRAPH_GENERATOR_THREAD_H_
++
++#include <core/threading/thread.h>
++//#include <aspect/clock.h>
++#include <aspect/configurable.h>
++#include <aspect/logging.h>
++//#include <aspect/blackboard.h>
++#include <aspect/blocked_timing.h>
++
++/*
++namespace fawkes {
++  class Position3DInterface;
++}
++*/
++
++//gazebo headers
++#include <plugins/gazebo/aspect/gazebo.h>
++//#include <gazebo/transport/TransportTypes.hh>
++
++class GazsimNavgraphGeneratorThread
++: public fawkes::Thread,
++//public fawkes::ClockAspect,
++  public fawkes::LoggingAspect,
++  public fawkes::ConfigurableAspect,
++//public fawkes::BlackBoardAspect,
++  public fawkes::BlockedTimingAspect,
++  public fawkes::GazeboAspect
++{
++ public:
++  GazsimNavgraphGeneratorThread();
++
++  virtual void init();
++  virtual void loop();
++  virtual void finalize();
++ private:
++  //Subscriber to receive tag_01 position from gazebo
++  std::string tag_01_;
++  gazebo::transport::SubscriberPtr subscriber_tag_01_;
++
++  //copy of last msg to write the interface in the next loop
++  gazebo::msgs::PosesStamped last_msg_;
++  bool new_data_;
++
++  //handler function for incoming messages about the machine light signals
++  void on_tag_vision_msg(ConstPosesStampedPtr &msg);
++};
++
++#endif
+-- 
+1.9.3
+
+
+From 527c9030fa158453ae9842f711697cc91adb2314 Mon Sep 17 00:00:00 2001
+From: David Schmidt <david.schmidt@rwth-aachen.de>
+Date: Mon, 14 Mar 2016 23:56:22 +0100
+Subject: [PATCH 02/10] finished developing the plugin, from now on debugging
+
+---
+ cfg/conf.d/gazsim.yaml                             |   4 +-
+ .../gazebo/gazsim-navgraph-generator/Makefile      |   4 +-
+ .../gazsim-navgraph-generator_plugin.cpp           |  44 -----
+ .../gazsim-navgraph-generator_thread.cpp           | 184 ---------------------
+ .../gazsim-navgraph-generator_thread.h             |  69 --------
+ .../gazsim_navgraph_generator_plugin.cpp           |  44 +++++
+ .../gazsim_navgraph_generator_thread.cpp           | 130 +++++++++++++++
+ .../gazsim_navgraph_generator_thread.h             |  78 +++++++++
+ 8 files changed, 257 insertions(+), 300 deletions(-)
+ delete mode 100644 src/plugins/gazebo/gazsim-navgraph-generator/gazsim-navgraph-generator_plugin.cpp
+ delete mode 100644 src/plugins/gazebo/gazsim-navgraph-generator/gazsim-navgraph-generator_thread.cpp
+ delete mode 100644 src/plugins/gazebo/gazsim-navgraph-generator/gazsim-navgraph-generator_thread.h
+ create mode 100644 src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_plugin.cpp
+ create mode 100644 src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp
+ create mode 100644 src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.h
+
+diff --git a/cfg/conf.d/gazsim.yaml b/cfg/conf.d/gazsim.yaml
+index d76acaa..6fe0255 100644
+--- a/cfg/conf.d/gazsim.yaml
++++ b/cfg/conf.d/gazsim.yaml
+@@ -167,4 +167,6 @@ gazsim:
+     frame: !frame gazsim_tag_vision
+ 
+   navgraph-generator:
+-    tag01: "~/tag_01/gazsim/gps/"
++    all-active-tags: ["~/tag_65/gazsim/gps/","~/tag_01/gazsim/gps/","~/tag_17/gazsim/gps/","~/tag_33/gazsim/gps/","~/tag_177/gazsim/gps/","~/tag_81/gazsim/gps/","~/tag_161/gazsim/gps/","~/tag_97/gazsim/gps/","~/tag_113/gazsim/gps/","~/tag_129/gazsim/gps/","~/tag_145/gazsim/gps/","~/tag_49/gazsim/gps/"]
++    related-mps: ["C-BS","C-CS1","C-CS2","C-RS1","C-RS2","C-DS","M-BS","M-CS1","M-CS2","M-RS1","M-RS2","M-DS"]
++    nav-gen-if-name: "/navgraph-generator-mps"
+diff --git a/src/plugins/gazebo/gazsim-navgraph-generator/Makefile b/src/plugins/gazebo/gazsim-navgraph-generator/Makefile
+index 421e23f..3639b4f 100644
+--- a/src/plugins/gazebo/gazsim-navgraph-generator/Makefile
++++ b/src/plugins/gazebo/gazsim-navgraph-generator/Makefile
+@@ -25,7 +25,7 @@ LIBS_gazsim_navgraph_generator = fawkescore fawkesutils fawkesaspects fvutils \
+ 	       Position3DInterface fawkesgazeboaspect \
+ 	       TransformInterface SwitchInterface \
+ 	       RobotinoLightInterface llsf_msgs
+-OBJS_gazsim_navgraph_generator = gazsim-navgraph-generator_plugin.o gazsim-navgraph-generator_thread.o
++OBJS_gazsim_navgraph_generator = gazsim_navgraph_generator_plugin.o gazsim_navgraph_generator_thread.o
+ 
+ OBJS_all    = $(OBJS_gazsim_navgraph_generator)
+ 
+@@ -35,7 +35,7 @@ ifeq ($(HAVE_GAZEBO)$(HAVE_PROTOBUF)$(HAVE_TF),111)
+   CFLAGS  += $(CFLAGS_GAZEBO) $(CFLAGS_PROTOBUF)
+   LDFLAGS += $(LDFLAGS_GAZEBO) $(LDFLAGS_PROTOBUF) -lm $(call boost-lbis-ldflags,system) -lboost_system
+ 
+-  PLUGINS_all = $(PLUGINDIR)/gazsim_navgraph_generator.$(SOEXT)
++  PLUGINS_all = $(PLUGINDIR)/gazsim-navgraph-generator.$(SOEXT)
+ else
+   WARN_TARGETS += warning_tf
+ endif
+diff --git a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim-navgraph-generator_plugin.cpp b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim-navgraph-generator_plugin.cpp
+deleted file mode 100644
+index 6b4c777..0000000
+--- a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim-navgraph-generator_plugin.cpp
++++ /dev/null
+@@ -1,44 +0,0 @@
+-/***************************************************************************
+- *  gazsim-navgraph-generator_plugin.cpp - Generates navgraph without exploration
+- *
+- *  Created: Mon Feb 15 11:25:00 2016
+- *  Copyright  2016  David Schmidt
+- ****************************************************************************/
+-
+-/*  This program is free software; you can redistribute it and/or modify
+- *  it under the terms of the GNU General Public License as published by
+- *  the Free Software Foundation; either version 2 of the License, or
+- *  (at your option) any later version.
+- *
+- *  This program is distributed in the hope that it will be useful,
+- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- *  GNU Library General Public License for more details.
+- *
+- *  Read the full text in the LICENSE.GPL file in the doc directory.
+- */
+-
+-#include <core/plugin.h>
+-
+-#include "gazsim-navgraph-generator_thread.h"
+-
+-using namespace fawkes;
+-
+-/** Plugin to ...
+- * @author David Schmidt
+- */
+-class GazsimNavgraphGeneratorPlugin : public fawkes::Plugin
+-{
+- public:
+-  /** Constructor.
+-   * @param config Fawkes configuration
+-   */
+-  GazsimNavgraphGeneratorPlugin(Configuration *config)
+-    : Plugin(config)
+-  {
+-    thread_list.push_back(new GazsimNavgraphGeneratorThread());
+-  }
+-};
+-
+-PLUGIN_DESCRIPTION("Gazsim Navgraph Generator Plugin for generating navgraph without exploration phase")
+-EXPORT_PLUGIN(GazsimNavgraphGeneratorPlugin)
+diff --git a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim-navgraph-generator_thread.cpp b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim-navgraph-generator_thread.cpp
+deleted file mode 100644
+index c3c0ac8..0000000
+--- a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim-navgraph-generator_thread.cpp
++++ /dev/null
+@@ -1,184 +0,0 @@
+-/***************************************************************************
+- *  gazsim-navgraph-generator_thread.cpp - Thread for generating navgraph without exploration phase
+- *
+- *  Created: Mon Feb 15 11:31:11 2016
+- *  Copyright  2016  David Schmidt
+- ****************************************************************************/
+-
+-/*  This program is free software; you can redistribute it and/or modify
+- *  it under the terms of the GNU General Public License as published by
+- *  the Free Software Foundation; either version 2 of the License, or
+- *  (at your option) any later version.
+- *
+- *  This program is distributed in the hope that it will be useful,
+- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- *  GNU Library General Public License for more details.
+- *
+- *  Read the full text in the LICENSE.GPL file in the doc directory.
+- */
+-
+-#include "gazsim-navgraph-generator_thread.h"
+-
+-//#include <tf/types.h>
+-//#include <interfaces/Position3DInterface.h>
+-
+-using namespace fawkes;
+-
+-/** @class GazsimNavgraphGeneratorThread "gazsim-navgraph-generator_thread.h"
+- * Thread for generating navgraph without exploration phase.
+- * @author David Schmidt
+- */
+-
+-/** Constructor. */
+-GazsimNavgraphGeneratorThread::GazsimNavgraphGeneratorThread()
+-  : Thread("GazsimNavgraphGeneratorThread", Thread::OPMODE_WAITFORWAKEUP),
+-    BlockedTimingAspect(BlockedTimingAspect::WAKEUP_HOOK_WORLDSTATE)
+-{
+-}
+-
+-void
+-GazsimNavgraphGeneratorThread::init()
+-{
+-  logger->log_debug(name(), "Initializing GazsimNavgraphGenerator Plugin");
+-
+-  //read config values
+-  tag_01_ = config->get_string("/gazsim/navgraph-generator/tag01");
+-	/*
+-  gazebo_topic_ = config->get_string("/gazsim/topics/tag-vision");
+-  tag_if_name_prefix_ = config->get_string("/gazsim/tag-vision/tag-if-name-prefix");
+-  info_if_name_ = config->get_string("/gazsim/tag-vision/info-if-name");
+-  frame_name_ = config->get_string("/gazsim/tag-vision/frame");
+-  number_interfaces_ = config->get_int("/gazsim/tag-vision/number-interfaces");
+-  visibility_history_increase_per_update_ = config->get_int("/gazsim/tag-vision/visibility-history-increase-per-update");
+-	*/
+-  
+-  //open interfaces
+-  /*
+-  info_if_ = blackboard->open_for_writing<fawkes::TagVisionInterface>(info_if_name_.c_str());
+-  for(int i = 0; i < number_interfaces_; i++)
+-  {
+-    std::ostringstream ss;
+-    ss << tag_if_name_prefix_.c_str() << i;
+-    tag_pos_ifs_[i] = blackboard->open_for_writing<fawkes::Position3DInterface>
+-      (ss.str().c_str());
+-  } 
+-  */
+-  
+-  //subscribing to gazebo tag-vision messages
+-  subscriber_tag_01_ = gazebonode->Subscribe
+-    (tag_01_, &GazsimNavgraphGeneratorThread::on_tag_vision_msg, this);
+-}
+-
+-void
+-GazsimNavgraphGeneratorThread::finalize()
+-{
+-  // blackboard->close(pose_if_);
+-}
+-
+-void
+-GazsimNavgraphGeneratorThread::loop()
+-{
+-  if(new_data_)
+-  {
+-	new_data_ = false;
+-	/*
+-	//go through all visible tags and write the data into the interfaces
+-	std::set<int> used_ifs;
+-	for(int i = 0; i < last_msg_.pose_size(); i++)
+-	{
+-	  gazebo::msgs::Pose pose = last_msg_.pose(i);
+-	  int tag_id = pose.id();
+-	  //find associated interface or unused interface index
+-	  int if_index = -1;
+-	  if(map_id_if_.find(tag_id) != map_id_if_.end())
+-	  {
+-		if_index = map_id_if_[tag_id];
+-	  }
+-	  else
+-	  {
+-		for(int j = 0; j < number_interfaces_; j++)
+-		{
+-		  if(tag_pos_ifs_[j]->visibility_history() <= 0)
+-		  {
+-			if_index = j;
+-			map_id_if_[tag_id] = if_index;
+-			break;
+-		  }
+-		}
+-	  }
+-	  if(if_index == -1)
+-	  {
+-		//no interface left to write data
+-		logger->log_info(name(), "Not enough interfaces to write all tag-poses to the blackboard.\n");
+-		continue;
+-	  }
+-	  tag_pos_ifs_[if_index]->set_translation(0, pose.position().x());
+-	  tag_pos_ifs_[if_index]->set_translation(1, pose.position().y());
+-	  tag_pos_ifs_[if_index]->set_translation(2, pose.position().z());
+-	  tag_pos_ifs_[if_index]->set_rotation(0, pose.orientation().x());
+-	  tag_pos_ifs_[if_index]->set_rotation(1, pose.orientation().y());
+-	  tag_pos_ifs_[if_index]->set_rotation(2, pose.orientation().z());
+-	  tag_pos_ifs_[if_index]->set_rotation(3, pose.orientation().w());
+-	  tag_pos_ifs_[if_index]->set_frame(frame_name_.c_str());
+-	  //compute visibility history
+-	  int current_vis_hist = tag_pos_ifs_[if_index]->visibility_history();
+-	  if(current_vis_hist < 0)
+-	  {
+-		current_vis_hist = 0;
+-	  }
+-	  current_vis_hist += visibility_history_increase_per_update_;
+-	  tag_pos_ifs_[if_index]->set_visibility_history(current_vis_hist);
+-	  tag_pos_ifs_[if_index]->write();
+-	  info_if_->set_tag_id(if_index, tag_id);
+-	  used_ifs.insert(if_index);
+-
+-
+-	  // publish the transform
+-	  tf::Transform transform(tf::Quaternion(pose.orientation().x(),
+-											 pose.orientation().y(),
+-											 pose.orientation().z(),
+-											 pose.orientation().w()),
+-							  tf::Vector3(pose.position().x(),
+-										  pose.position().y(),
+-										  pose.position().z()));
+-	  Time time(clock);
+-	  std::string tag_frame_name = std::string("tag_")+std::to_string(if_index);
+-	  tf::StampedTransform stamped_transform(transform,time,frame_name_,tag_frame_name);
+-	  tf_publisher->send_transform(stamped_transform);
+-	}
+-	//clear tags which became unvisibe and count visible tags
+-	int number_found_tags = 0;
+-	for(int i = 0; i < number_interfaces_; i++)
+-	{
+-	  if(used_ifs.find(i) == used_ifs.end())
+-	  {
+-		//compute visibility history
+-		int current_vis_hist = tag_pos_ifs_[i]->visibility_history();
+-		if(current_vis_hist > 0)
+-		{
+-		  current_vis_hist = 0;
+-		}
+-		current_vis_hist -= visibility_history_increase_per_update_;
+-		tag_pos_ifs_[i]->set_visibility_history(current_vis_hist);
+-		tag_pos_ifs_[i]->write();
+-		info_if_->set_tag_id(i, 0);
+-	  }
+-	  else
+-	  {
+-		number_found_tags++;
+-	  }
+-	}
+-	info_if_->set_tags_visible(number_found_tags);
+-	info_if_->write();
+-	*/
+- }
+-}
+-
+-
+-void GazsimNavgraphGeneratorThread::on_tag_vision_msg(ConstPosesStampedPtr &msg)
+-{
+-  // logger->log_info(name(), "Got new TagVision result from gazebo.\n");
+-  last_msg_.CopyFrom(*msg);
+-  new_data_ = true;
+-}
+diff --git a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim-navgraph-generator_thread.h b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim-navgraph-generator_thread.h
+deleted file mode 100644
+index 3bf8966..0000000
+--- a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim-navgraph-generator_thread.h
++++ /dev/null
+@@ -1,69 +0,0 @@
+-/***************************************************************************
+- *  gazsim-navgraph-generator_thread.h - Thread for generating the navgraph without exploration phase
+- *
+- *  Created: Mon Feb 15 11:27:09 2016
+- *  Copyright  2016  David Schmidt
+- ****************************************************************************/
+-
+-/*  This program is free software; you can redistribute it and/or modify
+- *  it under the terms of the GNU General Public License as published by
+- *  the Free Software Foundation; either version 2 of the License, or
+- *  (at your option) any later version.
+- *
+- *  This program is distributed in the hope that it will be useful,
+- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- *  GNU Library General Public License for more details.
+- *
+- *  Read the full text in the LICENSE.GPL file in the doc directory.
+- */
+-
+-#ifndef __PLUGINS_GAZSIM_NAVGRAPH_GENERATOR_THREAD_H_
+-#define __PLUGINS_GAZSIM_NAVGRAPH_GENERATOR_THREAD_H_
+-
+-#include <core/threading/thread.h>
+-//#include <aspect/clock.h>
+-#include <aspect/configurable.h>
+-#include <aspect/logging.h>
+-//#include <aspect/blackboard.h>
+-#include <aspect/blocked_timing.h>
+-
+-/*
+-namespace fawkes {
+-  class Position3DInterface;
+-}
+-*/
+-
+-//gazebo headers
+-#include <plugins/gazebo/aspect/gazebo.h>
+-//#include <gazebo/transport/TransportTypes.hh>
+-
+-class GazsimNavgraphGeneratorThread
+-: public fawkes::Thread,
+-//public fawkes::ClockAspect,
+-  public fawkes::LoggingAspect,
+-  public fawkes::ConfigurableAspect,
+-//public fawkes::BlackBoardAspect,
+-  public fawkes::BlockedTimingAspect,
+-  public fawkes::GazeboAspect
+-{
+- public:
+-  GazsimNavgraphGeneratorThread();
+-
+-  virtual void init();
+-  virtual void loop();
+-  virtual void finalize();
+- private:
+-  //Subscriber to receive tag_01 position from gazebo
+-  std::string tag_01_;
+-  gazebo::transport::SubscriberPtr subscriber_tag_01_;
+-
+-  //copy of last msg to write the interface in the next loop
+-  gazebo::msgs::PosesStamped last_msg_;
+-  bool new_data_;
+-
+-  //handler function for incoming messages about the machine light signals
+-  void on_tag_vision_msg(ConstPosesStampedPtr &msg);
+-};
+-
+-#endif
+diff --git a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_plugin.cpp b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_plugin.cpp
+new file mode 100644
+index 0000000..91a13c7
+--- /dev/null
++++ b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_plugin.cpp
+@@ -0,0 +1,44 @@
++/***************************************************************************
++ *  gazsim_navgraph_generator_plugin.cpp - Generates navgraph without exploration
++ *
++ *  Created: Mon Feb 15 11:25:00 2016
++ *  Copyright  2016  David Schmidt
++ ****************************************************************************/
++
++/*  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License as published by
++ *  the Free Software Foundation; either version 2 of the License, or
++ *  (at your option) any later version.
++ *
++ *  This program is distributed in the hope that it will be useful,
++ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
++ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ *  GNU Library General Public License for more details.
++ *
++ *  Read the full text in the LICENSE.GPL file in the doc directory.
++ */
++
++#include <core/plugin.h>
++
++#include "gazsim_navgraph_generator_thread.h"
++
++using namespace fawkes;
++
++/** Plugin to generate navgraph without exploration phase in simulation
++ * @author David Schmidt
++ */
++class GazsimNavgraphGeneratorPlugin : public fawkes::Plugin
++{
++ public:
++  /** Constructor.
++   * @param config Fawkes configuration
++   */
++  GazsimNavgraphGeneratorPlugin(Configuration *config)
++    : Plugin(config)
++  {
++    thread_list.push_back(new GazsimNavgraphGeneratorThread());
++  }
++};
++
++PLUGIN_DESCRIPTION("Gazsim Navgraph Generator Plugin for generating navgraph without exploration phase")
++EXPORT_PLUGIN(GazsimNavgraphGeneratorPlugin)
+diff --git a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp
+new file mode 100644
+index 0000000..ac9083a
+--- /dev/null
++++ b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp
+@@ -0,0 +1,130 @@
++/***************************************************************************
++ *  gazsim_navgraph_generator_thread.cpp - Thread for generating navgraph without exploration phase
++ *
++ *  Created: Mon Feb 15 11:31:11 2016
++ *  Copyright  2016  David Schmidt
++ ****************************************************************************/
++
++/*  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License as published by
++ *  the Free Software Foundation; either version 2 of the License, or
++ *  (at your option) any later version.
++ *
++ *  This program is distributed in the hope that it will be useful,
++ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
++ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ *  GNU Library General Public License for more details.
++ *
++ *  Read the full text in the LICENSE.GPL file in the doc directory.
++ */
++
++#include <string>
++#include <unordered_map>
++//#include <tf/types.h>
++//#include <interfaces/Position3DInterface.h>
++#include <interfaces/NavGraphWithMPSGeneratorInterface.h>
++#include "gazsim_navgraph_generator_thread.h"
++
++using namespace fawkes;
++
++/** @class GazsimNavgraphGeneratorThread "gazsim-navgraph-generator_thread.h"
++ * Thread for generating navgraph without exploration phase.
++ * @author David Schmidt
++ */
++
++/** Constructor. */
++GazsimNavgraphGeneratorThread::GazsimNavgraphGeneratorThread()
++  : Thread("GazsimNavgraphGeneratorThread", Thread::OPMODE_WAITFORWAKEUP),
++    BlockedTimingAspect(BlockedTimingAspect::WAKEUP_HOOK_WORLDSTATE),
++	task_finished_(false),
++	computation_is_running_(false)
++{
++}
++
++void
++GazsimNavgraphGeneratorThread::init()
++{
++  logger->log_debug(name(), "Initializing GazsimNavgraphGenerator Plugin");
++
++  //read config values
++  tags_ = config->get_strings("/gazsim/navgraph-generator/all-active-tags");
++  related_mps_ = config->get_strings("/gazsim/navgraph-generator/related-mps");
++  nav_gen_if_name_ = config->get_string("/gazsim/navgraph-generator/nav-gen-if-name");
++  
++  //open interfaces
++  //TODO error reports, that we need writing access however we cant, because somebody else has
++  //	it also should be sufficient to open for reading, in the first place
++  nav_gen_if_ = blackboard->open_for_reading<fawkes::NavGraphWithMPSGeneratorInterface>(nav_gen_if_name_.data());
++  
++  //subscribing to gazebo tag messages
++  for(unsigned i=0;i<tags_.size();++i)
++	  subscriber_tags_.push_back(gazebo_world_node->Subscribe
++	  	  (tags_[i], &GazsimNavgraphGeneratorThread::on_tag_msg, this));
++  tag_msgs_.clear();
++}
++
++void GazsimNavgraphGeneratorThread::finalize(){}
++
++void
++GazsimNavgraphGeneratorThread::loop()
++{
++	//check if navgraph is already computed
++	if(task_finished_)
++		return;
++	//check if computation of navgraph is running
++	if(computation_is_running_){
++		if(nav_gen_if_->is_final()){
++			task_finished_=true;
++			computation_is_running_=false;
++			//TODO close interface nav_gen_if_
++		}
++		return;
++	}
++	//check if all tag-messages were received
++	if(tag_msgs_.size()<tags_.size())
++		return;
++	//send the position of all tags
++	for(std::map<int,gazebo::msgs::Pose>::iterator it=tag_msgs_.begin();it!=tag_msgs_.end();++it){
++		logger->log_info(name(),"tag %i gets sent to NavgraphGenerator.",(*it).first);
++		send_station_msg((*it).first,(*it).second);
++	}
++	nav_gen_if_->msgq_append(new NavGraphWithMPSGeneratorInterface::ComputeMessage());
++	computation_is_running_=true;
++	//TODO unsubscribe all subcribers in subscriber_tags_
++}
++
++void GazsimNavgraphGeneratorThread::on_tag_msg(ConstPosePtr &msg)
++{
++	int underscore=msg->name().find('_');
++	int id=std::atoi(msg->name().substr(underscore+1).data());
++	tag_msgs_[id].CopyFrom(*msg);
++}
++
++void GazsimNavgraphGeneratorThread::get_mpsID_by_tagID()
++{
++	if(tags_.size()!=related_mps_.size()){
++		logger->log_error(name(),"There are %i tags defined, but %i!=%i related mps!",tags_.size(),related_mps_.size(),tags_.size());
++		return;
++	}
++	for(unsigned i=0;i<tags_.size();++i){
++		int underscore=tags_[i].find('_');
++		int slash=tags_[i].substr(underscore+1).find('/');
++		int id=std::atoi(tags_[i].substr(underscore+1,slash).data());
++		mps_id_[id]=related_mps_[i];
++	}
++}
++
++void GazsimNavgraphGeneratorThread::send_station_msg(int id, gazebo::msgs::Pose pose){
++	NavGraphWithMPSGeneratorInterface::UpdateStationByTagMessage* stationMsg=new NavGraphWithMPSGeneratorInterface::UpdateStationByTagMessage();
++	stationMsg->set_id(mps_id_[id].data());
++	stationMsg->set_side(NavGraphWithMPSGeneratorInterface::Side::INPUT);
++	stationMsg->set_frame("/map");
++	stationMsg->set_tag_translation(0,pose.position().x());
++	stationMsg->set_tag_translation(1,pose.position().y());
++	stationMsg->set_tag_translation(2,pose.position().z());
++	stationMsg->set_tag_rotation(0,pose.orientation().w());
++	stationMsg->set_tag_rotation(1,pose.orientation().x());
++	stationMsg->set_tag_rotation(2,pose.orientation().y());
++	stationMsg->set_tag_rotation(3,pose.orientation().z());
++	nav_gen_if_->msgq_append(stationMsg);
++}
+diff --git a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.h b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.h
+new file mode 100644
+index 0000000..d8e5847
+--- /dev/null
++++ b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.h
+@@ -0,0 +1,78 @@
++/***************************************************************************
++ *  gazsim_navgraph_generator_thread.h - Thread for generating the navgraph without exploration phase
++ *
++ *  Created: Mon Feb 15 11:27:09 2016
++ *  Copyright  2016  David Schmidt
++ ****************************************************************************/
++
++/*  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License as published by
++ *  the Free Software Foundation; either version 2 of the License, or
++ *  (at your option) any later version.
++ *
++ *  This program is distributed in the hope that it will be useful,
++ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
++ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ *  GNU Library General Public License for more details.
++ *
++ *  Read the full text in the LICENSE.GPL file in the doc directory.
++ */
++
++#ifndef __PLUGINS_GAZSIM_NAVGRAPH_GENERATOR_THREAD_H_
++#define __PLUGINS_GAZSIM_NAVGRAPH_GENERATOR_THREAD_H_
++
++#include <core/threading/thread.h>
++//#include <aspect/clock.h>	//TODO corresponds to next TODO
++#include <aspect/configurable.h>
++#include <aspect/logging.h>
++#include <aspect/blackboard.h>
++#include <aspect/blocked_timing.h>
++#include <interfaces/NavGraphWithMPSGeneratorInterface.h>
++
++//gazebo headers
++#include <plugins/gazebo/aspect/gazebo.h>
++
++class GazsimNavgraphGeneratorThread
++: public fawkes::Thread,
++//public fawkes::ClockAspect,	//TODO is this needed? currently not, but maybe one should always implement a timeout?
++  public fawkes::LoggingAspect,
++  public fawkes::ConfigurableAspect,
++  public fawkes::BlackBoardAspect,
++  public fawkes::BlockedTimingAspect,
++  public fawkes::GazeboAspect
++{
++ public:
++  GazsimNavgraphGeneratorThread();
++
++  virtual void init();
++  virtual void loop();
++  virtual void finalize();
++ private:
++  //controlling flags
++  bool task_finished_;
++  bool computation_is_running_;
++
++  //Subscribers to receive tag positions from gazebo
++  std::vector<std::string> tags_;
++  std::vector<std::string> related_mps_;
++  std::vector<gazebo::transport::SubscriberPtr> subscriber_tags_;
++
++  //navgraph generator interface
++  std::string nav_gen_if_name_;
++  fawkes::NavGraphWithMPSGeneratorInterface *nav_gen_if_;
++
++  //list of poses of the tags
++  std::map<int,gazebo::msgs::Pose> tag_msgs_;
++
++  //handler function for incoming messages about the tag positions
++  void on_tag_msg(ConstPosePtr &msg);
++
++  //extract mpsID ordered by tagID
++  std::map<int,std::string> mps_id_;
++  void get_mpsID_by_tagID();
++
++  //send station msg with pose information to navgraph generator
++  void send_station_msg(int id, gazebo::msgs::Pose pose);
++};
++
++#endif
+-- 
+1.9.3
+
+
+From 37d906bb39174a5678bea1d7445f56a641bf3294 Mon Sep 17 00:00:00 2001
+From: David Schmidt <david.schmidt@rwth-aachen.de>
+Date: Tue, 15 Mar 2016 01:05:37 +0100
+Subject: [PATCH 03/10] needed to use msgq_enqueue for also transmitting the
+ message
+
+---
+ .../gazsim_navgraph_generator_thread.cpp           | 151 +++++++++++----------
+ 1 file changed, 77 insertions(+), 74 deletions(-)
+
+diff --git a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp
+index ac9083a..bd80628 100644
+--- a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp
++++ b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp
+@@ -33,98 +33,101 @@ using namespace fawkes;
+  */
+ 
+ /** Constructor. */
+-GazsimNavgraphGeneratorThread::GazsimNavgraphGeneratorThread()
+-  : Thread("GazsimNavgraphGeneratorThread", Thread::OPMODE_WAITFORWAKEUP),
+-    BlockedTimingAspect(BlockedTimingAspect::WAKEUP_HOOK_WORLDSTATE),
+-	task_finished_(false),
+-	computation_is_running_(false)
+-{
++GazsimNavgraphGeneratorThread::GazsimNavgraphGeneratorThread() :
++    Thread("GazsimNavgraphGeneratorThread", Thread::OPMODE_WAITFORWAKEUP), BlockedTimingAspect(
++        BlockedTimingAspect::WAKEUP_HOOK_WORLDSTATE), task_finished_(false), computation_is_running_(
++        false) {
+ }
+ 
+-void
+-GazsimNavgraphGeneratorThread::init()
+-{
++void GazsimNavgraphGeneratorThread::init() {
+   logger->log_debug(name(), "Initializing GazsimNavgraphGenerator Plugin");
+ 
+   //read config values
+   tags_ = config->get_strings("/gazsim/navgraph-generator/all-active-tags");
+   related_mps_ = config->get_strings("/gazsim/navgraph-generator/related-mps");
+-  nav_gen_if_name_ = config->get_string("/gazsim/navgraph-generator/nav-gen-if-name");
+-  
++  nav_gen_if_name_ = config->get_string(
++      "/gazsim/navgraph-generator/nav-gen-if-name");
++
+   //open interfaces
+   //TODO error reports, that we need writing access however we cant, because somebody else has
+-  //	it also should be sufficient to open for reading, in the first place
+-  nav_gen_if_ = blackboard->open_for_reading<fawkes::NavGraphWithMPSGeneratorInterface>(nav_gen_if_name_.data());
+-  
++  //  it also should be sufficient to open for reading, in the first place
++  nav_gen_if_ = blackboard->open_for_reading<
++      fawkes::NavGraphWithMPSGeneratorInterface>(nav_gen_if_name_.data());
++
+   //subscribing to gazebo tag messages
+-  for(unsigned i=0;i<tags_.size();++i)
+-	  subscriber_tags_.push_back(gazebo_world_node->Subscribe
+-	  	  (tags_[i], &GazsimNavgraphGeneratorThread::on_tag_msg, this));
++  for (unsigned i = 0; i < tags_.size(); ++i)
++    subscriber_tags_.push_back(
++        gazebo_world_node->Subscribe(tags_[i],
++            &GazsimNavgraphGeneratorThread::on_tag_msg, this));
+   tag_msgs_.clear();
+ }
+ 
+-void GazsimNavgraphGeneratorThread::finalize(){}
++void GazsimNavgraphGeneratorThread::finalize() {
++}
+ 
+-void
+-GazsimNavgraphGeneratorThread::loop()
+-{
+-	//check if navgraph is already computed
+-	if(task_finished_)
+-		return;
+-	//check if computation of navgraph is running
+-	if(computation_is_running_){
+-		if(nav_gen_if_->is_final()){
+-			task_finished_=true;
+-			computation_is_running_=false;
+-			//TODO close interface nav_gen_if_
+-		}
+-		return;
+-	}
+-	//check if all tag-messages were received
+-	if(tag_msgs_.size()<tags_.size())
+-		return;
+-	//send the position of all tags
+-	for(std::map<int,gazebo::msgs::Pose>::iterator it=tag_msgs_.begin();it!=tag_msgs_.end();++it){
+-		logger->log_info(name(),"tag %i gets sent to NavgraphGenerator.",(*it).first);
+-		send_station_msg((*it).first,(*it).second);
+-	}
+-	nav_gen_if_->msgq_append(new NavGraphWithMPSGeneratorInterface::ComputeMessage());
+-	computation_is_running_=true;
+-	//TODO unsubscribe all subcribers in subscriber_tags_
++void GazsimNavgraphGeneratorThread::loop() {
++  //check if navgraph is already computed
++  if (task_finished_)
++    return;
++  //check if computation of navgraph is running
++  if (computation_is_running_) {
++    if (nav_gen_if_->is_final()) {
++      task_finished_ = true;
++      computation_is_running_ = false;
++      //TODO close interface nav_gen_if_
++    }
++    return;
++  }
++  //check if all tag-messages were received
++  if (tag_msgs_.size() < tags_.size())
++    return;
++  //send the position of all tags
++  for (std::map<int, gazebo::msgs::Pose>::iterator it = tag_msgs_.begin();
++      it != tag_msgs_.end(); ++it) {
++    logger->log_info(name(), "tag %i gets sent to NavgraphGenerator.",
++        (*it).first);
++    send_station_msg((*it).first, (*it).second);
++  }
++  nav_gen_if_->msgq_enqueue(
++      new NavGraphWithMPSGeneratorInterface::ComputeMessage());
++  computation_is_running_ = true;
++  //TODO unsubscribe all subcribers in subscriber_tags_
+ }
+ 
+-void GazsimNavgraphGeneratorThread::on_tag_msg(ConstPosePtr &msg)
+-{
+-	int underscore=msg->name().find('_');
+-	int id=std::atoi(msg->name().substr(underscore+1).data());
+-	tag_msgs_[id].CopyFrom(*msg);
++void GazsimNavgraphGeneratorThread::on_tag_msg(ConstPosePtr &msg) {
++  int underscore = msg->name().find('_');
++  int id = std::atoi(msg->name().substr(underscore + 1).data());
++  tag_msgs_[id].CopyFrom(*msg);
+ }
+ 
+-void GazsimNavgraphGeneratorThread::get_mpsID_by_tagID()
+-{
+-	if(tags_.size()!=related_mps_.size()){
+-		logger->log_error(name(),"There are %i tags defined, but %i!=%i related mps!",tags_.size(),related_mps_.size(),tags_.size());
+-		return;
+-	}
+-	for(unsigned i=0;i<tags_.size();++i){
+-		int underscore=tags_[i].find('_');
+-		int slash=tags_[i].substr(underscore+1).find('/');
+-		int id=std::atoi(tags_[i].substr(underscore+1,slash).data());
+-		mps_id_[id]=related_mps_[i];
+-	}
++void GazsimNavgraphGeneratorThread::get_mpsID_by_tagID() {
++  if (tags_.size() != related_mps_.size()) {
++    logger->log_error(name(),
++        "There are %i tags defined, but %i!=%i related mps!", tags_.size(),
++        related_mps_.size(), tags_.size());
++    return;
++  }
++  for (unsigned i = 0; i < tags_.size(); ++i) {
++    int underscore = tags_[i].find('_');
++    int slash = tags_[i].substr(underscore + 1).find('/');
++    int id = std::atoi(tags_[i].substr(underscore + 1, slash).data());
++    mps_id_[id] = related_mps_[i];
++  }
+ }
+ 
+-void GazsimNavgraphGeneratorThread::send_station_msg(int id, gazebo::msgs::Pose pose){
+-	NavGraphWithMPSGeneratorInterface::UpdateStationByTagMessage* stationMsg=new NavGraphWithMPSGeneratorInterface::UpdateStationByTagMessage();
+-	stationMsg->set_id(mps_id_[id].data());
+-	stationMsg->set_side(NavGraphWithMPSGeneratorInterface::Side::INPUT);
+-	stationMsg->set_frame("/map");
+-	stationMsg->set_tag_translation(0,pose.position().x());
+-	stationMsg->set_tag_translation(1,pose.position().y());
+-	stationMsg->set_tag_translation(2,pose.position().z());
+-	stationMsg->set_tag_rotation(0,pose.orientation().w());
+-	stationMsg->set_tag_rotation(1,pose.orientation().x());
+-	stationMsg->set_tag_rotation(2,pose.orientation().y());
+-	stationMsg->set_tag_rotation(3,pose.orientation().z());
+-	nav_gen_if_->msgq_append(stationMsg);
++void GazsimNavgraphGeneratorThread::send_station_msg(int id,
++    gazebo::msgs::Pose pose) {
++  NavGraphWithMPSGeneratorInterface::UpdateStationByTagMessage* stationMsg =
++      new NavGraphWithMPSGeneratorInterface::UpdateStationByTagMessage();
++  stationMsg->set_id(mps_id_[id].data());
++  stationMsg->set_side(NavGraphWithMPSGeneratorInterface::Side::INPUT);
++  stationMsg->set_frame("/map");
++  stationMsg->set_tag_translation(0, pose.position().x());
++  stationMsg->set_tag_translation(1, pose.position().y());
++  stationMsg->set_tag_translation(2, pose.position().z());
++  stationMsg->set_tag_rotation(0, pose.orientation().w());
++  stationMsg->set_tag_rotation(1, pose.orientation().x());
++  stationMsg->set_tag_rotation(2, pose.orientation().y());
++  stationMsg->set_tag_rotation(3, pose.orientation().z());
++  nav_gen_if_->msgq_enqueue(stationMsg);
+ }
+-- 
+1.9.3
+
+
+From 363badbb02437e18e0dd88f61e8e5df13ea6249e Mon Sep 17 00:00:00 2001
+From: David Schmidt <david.schmidt@rwth-aachen.de>
+Date: Mon, 11 Apr 2016 13:23:40 +0200
+Subject: [PATCH 04/10] navgraph-gen-sim: corrected orientation and mps-id in
+ sending_tags
+
+---
+ .../gazsim_navgraph_generator_thread.cpp           | 187 +++++++++++----------
+ .../gazsim_navgraph_generator_thread.h             |  90 +++++-----
+ 2 files changed, 145 insertions(+), 132 deletions(-)
+
+diff --git a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp
+index bd80628..5ea0d7a 100644
+--- a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp
++++ b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp
+@@ -1,21 +1,21 @@
+ /***************************************************************************
+- *  gazsim_navgraph_generator_thread.cpp - Thread for generating navgraph without exploration phase
++ *	gazsim_navgraph_generator_thread.cpp - Thread for generating navgraph without exploration phase
+  *
+- *  Created: Mon Feb 15 11:31:11 2016
+- *  Copyright  2016  David Schmidt
++ *	Created: Mon Feb 15 11:31:11 2016
++ *	Copyright	2016	David Schmidt
+  ****************************************************************************/
+ 
+-/*  This program is free software; you can redistribute it and/or modify
+- *  it under the terms of the GNU General Public License as published by
+- *  the Free Software Foundation; either version 2 of the License, or
+- *  (at your option) any later version.
++/*	This program is free software; you can redistribute it and/or modify
++ *	it under the terms of the GNU General Public License as published by
++ *	the Free Software Foundation; either version 2 of the License, or
++ *	(at your option) any later version.
+  *
+- *  This program is distributed in the hope that it will be useful,
+- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- *  GNU Library General Public License for more details.
++ *	This program is distributed in the hope that it will be useful,
++ *	but WITHOUT ANY WARRANTY; without even the implied warranty of
++ *	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	See the
++ *	GNU Library General Public License for more details.
+  *
+- *  Read the full text in the LICENSE.GPL file in the doc directory.
++ *	Read the full text in the LICENSE.GPL file in the doc directory.
+  */
+ 
+ #include <string>
+@@ -23,6 +23,7 @@
+ //#include <tf/types.h>
+ //#include <interfaces/Position3DInterface.h>
+ #include <interfaces/NavGraphWithMPSGeneratorInterface.h>
++#include <tf/types.h>
+ #include "gazsim_navgraph_generator_thread.h"
+ 
+ using namespace fawkes;
+@@ -34,100 +35,112 @@ using namespace fawkes;
+ 
+ /** Constructor. */
+ GazsimNavgraphGeneratorThread::GazsimNavgraphGeneratorThread() :
+-    Thread("GazsimNavgraphGeneratorThread", Thread::OPMODE_WAITFORWAKEUP), BlockedTimingAspect(
+-        BlockedTimingAspect::WAKEUP_HOOK_WORLDSTATE), task_finished_(false), computation_is_running_(
+-        false) {
++		Thread("GazsimNavgraphGeneratorThread", Thread::OPMODE_WAITFORWAKEUP), BlockedTimingAspect(
++				BlockedTimingAspect::WAKEUP_HOOK_WORLDSTATE), task_finished_(false), computation_is_running_(
++				false) {
+ }
+ 
+ void GazsimNavgraphGeneratorThread::init() {
+-  logger->log_debug(name(), "Initializing GazsimNavgraphGenerator Plugin");
++	logger->log_debug(name(), "Initializing GazsimNavgraphGenerator Plugin");
+ 
+-  //read config values
+-  tags_ = config->get_strings("/gazsim/navgraph-generator/all-active-tags");
+-  related_mps_ = config->get_strings("/gazsim/navgraph-generator/related-mps");
+-  nav_gen_if_name_ = config->get_string(
+-      "/gazsim/navgraph-generator/nav-gen-if-name");
++	//read config values
++	tags_ = config->get_strings("/gazsim/navgraph-generator/all-active-tags");
++	related_mps_ = config->get_strings("/gazsim/navgraph-generator/related-mps");
++	nav_gen_if_name_ = config->get_string(
++			"/gazsim/navgraph-generator/nav-gen-if-name");
+ 
+-  //open interfaces
+-  //TODO error reports, that we need writing access however we cant, because somebody else has
+-  //  it also should be sufficient to open for reading, in the first place
+-  nav_gen_if_ = blackboard->open_for_reading<
+-      fawkes::NavGraphWithMPSGeneratorInterface>(nav_gen_if_name_.data());
++	//open interfaces
++	//TODO error reports, that we need writing access however we cant, because somebody else has
++	//	it also should be sufficient to open for reading, in the first place
++	nav_gen_if_ = blackboard->open_for_reading<
++			fawkes::NavGraphWithMPSGeneratorInterface>(nav_gen_if_name_.data());
+ 
+-  //subscribing to gazebo tag messages
+-  for (unsigned i = 0; i < tags_.size(); ++i)
+-    subscriber_tags_.push_back(
+-        gazebo_world_node->Subscribe(tags_[i],
+-            &GazsimNavgraphGeneratorThread::on_tag_msg, this));
+-  tag_msgs_.clear();
++	//subscribing to gazebo tag messages
++	for (unsigned i = 0; i < tags_.size(); ++i)
++		subscriber_tags_.push_back(
++				gazebo_world_node->Subscribe(tags_[i],
++						&GazsimNavgraphGeneratorThread::on_tag_msg, this));
++	tag_msgs_.clear();
++
++	//sort the mpsIDs to the tagIDs in mps_id_
++	get_mpsID_by_tagID();
+ }
+ 
+ void GazsimNavgraphGeneratorThread::finalize() {
+ }
+ 
+ void GazsimNavgraphGeneratorThread::loop() {
+-  //check if navgraph is already computed
+-  if (task_finished_)
+-    return;
+-  //check if computation of navgraph is running
+-  if (computation_is_running_) {
+-    if (nav_gen_if_->is_final()) {
+-      task_finished_ = true;
+-      computation_is_running_ = false;
+-      //TODO close interface nav_gen_if_
+-    }
+-    return;
+-  }
+-  //check if all tag-messages were received
+-  if (tag_msgs_.size() < tags_.size())
+-    return;
+-  //send the position of all tags
+-  for (std::map<int, gazebo::msgs::Pose>::iterator it = tag_msgs_.begin();
+-      it != tag_msgs_.end(); ++it) {
+-    logger->log_info(name(), "tag %i gets sent to NavgraphGenerator.",
+-        (*it).first);
+-    send_station_msg((*it).first, (*it).second);
+-  }
+-  nav_gen_if_->msgq_enqueue(
+-      new NavGraphWithMPSGeneratorInterface::ComputeMessage());
+-  computation_is_running_ = true;
+-  //TODO unsubscribe all subcribers in subscriber_tags_
++	//check if navgraph is already computed
++	if (task_finished_)
++		return;
++	//check if computation of navgraph is running
++	if (computation_is_running_) {
++		if (nav_gen_if_->is_final()) {
++			task_finished_ = true;
++			computation_is_running_ = false;
++			//TODO close interface nav_gen_if_
++		}
++		return;
++	}
++	//check if all tag-messages were received
++	if (tag_msgs_.size() < tags_.size())
++		return;
++	//send the position of all tags
++	for (std::map<int, gazebo::msgs::Pose>::iterator it = tag_msgs_.begin();
++			it != tag_msgs_.end(); ++it) {
++		logger->log_info(name(), "tag %i gets sent to NavgraphGenerator.",
++				(*it).first);
++		send_station_msg((*it).first, (*it).second);
++	}
++	nav_gen_if_->msgq_enqueue(
++			new NavGraphWithMPSGeneratorInterface::ComputeMessage());
++	computation_is_running_ = true;
++	//TODO unsubscribe all subcribers in subscriber_tags_
+ }
+ 
+ void GazsimNavgraphGeneratorThread::on_tag_msg(ConstPosePtr &msg) {
+-  int underscore = msg->name().find('_');
+-  int id = std::atoi(msg->name().substr(underscore + 1).data());
+-  tag_msgs_[id].CopyFrom(*msg);
++	int underscore = msg->name().find('_');
++	int id = std::atoi(msg->name().substr(underscore + 1).data());
++	tag_msgs_[id].CopyFrom(*msg);
+ }
+ 
+ void GazsimNavgraphGeneratorThread::get_mpsID_by_tagID() {
+-  if (tags_.size() != related_mps_.size()) {
+-    logger->log_error(name(),
+-        "There are %i tags defined, but %i!=%i related mps!", tags_.size(),
+-        related_mps_.size(), tags_.size());
+-    return;
+-  }
+-  for (unsigned i = 0; i < tags_.size(); ++i) {
+-    int underscore = tags_[i].find('_');
+-    int slash = tags_[i].substr(underscore + 1).find('/');
+-    int id = std::atoi(tags_[i].substr(underscore + 1, slash).data());
+-    mps_id_[id] = related_mps_[i];
+-  }
++	if (tags_.size() != related_mps_.size()) {
++		logger->log_error(name(),
++				"There are %i tags defined, but %i!=%i related mps!", tags_.size(),
++				related_mps_.size(), tags_.size());
++		return;
++	}
++	for (unsigned i = 0; i < tags_.size(); ++i) {
++		int underscore = tags_[i].find('_');
++		int slash = tags_[i].substr(underscore + 1).find('/');
++		int id = std::atoi(tags_[i].substr(underscore + 1, slash).data());
++		mps_id_[id] = related_mps_[i];
++		logger->log_info(name(),"Full tag name:  %s", tags_[i].data());
++		logger->log_info(name(),"Extracted id:   %i", id);
++		logger->log_info(name(),"Related MPS-ID: %s", mps_id_[id].data());
++	}
+ }
+ 
+ void GazsimNavgraphGeneratorThread::send_station_msg(int id,
+-    gazebo::msgs::Pose pose) {
+-  NavGraphWithMPSGeneratorInterface::UpdateStationByTagMessage* stationMsg =
+-      new NavGraphWithMPSGeneratorInterface::UpdateStationByTagMessage();
+-  stationMsg->set_id(mps_id_[id].data());
+-  stationMsg->set_side(NavGraphWithMPSGeneratorInterface::Side::INPUT);
+-  stationMsg->set_frame("/map");
+-  stationMsg->set_tag_translation(0, pose.position().x());
+-  stationMsg->set_tag_translation(1, pose.position().y());
+-  stationMsg->set_tag_translation(2, pose.position().z());
+-  stationMsg->set_tag_rotation(0, pose.orientation().w());
+-  stationMsg->set_tag_rotation(1, pose.orientation().x());
+-  stationMsg->set_tag_rotation(2, pose.orientation().y());
+-  stationMsg->set_tag_rotation(3, pose.orientation().z());
+-  nav_gen_if_->msgq_enqueue(stationMsg);
++                                                     gazebo::msgs::Pose pose) {
++	NavGraphWithMPSGeneratorInterface::UpdateStationByTagMessage* stationMsg =
++			new NavGraphWithMPSGeneratorInterface::UpdateStationByTagMessage();
++	stationMsg->set_id(mps_id_[id].data());
++	stationMsg->set_side(NavGraphWithMPSGeneratorInterface::Side::INPUT);
++	stationMsg->set_frame("/map");
++	stationMsg->set_tag_translation(0, pose.position().x());
++	stationMsg->set_tag_translation(1, pose.position().y());
++	stationMsg->set_tag_translation(2, pose.position().z());
++	stationMsg->set_tag_rotation(0, pose.orientation().x());
++	stationMsg->set_tag_rotation(1, pose.orientation().y());
++	stationMsg->set_tag_rotation(2, pose.orientation().z());
++	stationMsg->set_tag_rotation(3, pose.orientation().w());
++	double tag_orientation=tf::get_yaw(tf::Quaternion(pose.orientation().x(),pose.orientation().y(),
++	                                                  pose.orientation().z(),pose.orientation().w()));
++	logger->log_info(name(),"ID:%i",id);
++	logger->log_info(name(),"Name:%s",mps_id_[id].data());
++	logger->log_info(name(),"Position:%f,%f,%f",pose.position().x(),pose.position().y(),pose.position().z());
++	logger->log_info(name(),"Rotation:%f",tag_orientation);
++	nav_gen_if_->msgq_enqueue(stationMsg);
+ }
+diff --git a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.h b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.h
+index d8e5847..1b48879 100644
+--- a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.h
++++ b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.h
+@@ -1,21 +1,21 @@
+ /***************************************************************************
+- *  gazsim_navgraph_generator_thread.h - Thread for generating the navgraph without exploration phase
++ *	gazsim_navgraph_generator_thread.h - Thread for generating the navgraph without exploration phase
+  *
+- *  Created: Mon Feb 15 11:27:09 2016
+- *  Copyright  2016  David Schmidt
++ *	Created: Mon Feb 15 11:27:09 2016
++ *	Copyright	2016	David Schmidt
+  ****************************************************************************/
+ 
+-/*  This program is free software; you can redistribute it and/or modify
+- *  it under the terms of the GNU General Public License as published by
+- *  the Free Software Foundation; either version 2 of the License, or
+- *  (at your option) any later version.
++/*	This program is free software; you can redistribute it and/or modify
++ *	it under the terms of the GNU General Public License as published by
++ *	the Free Software Foundation; either version 2 of the License, or
++ *	(at your option) any later version.
+  *
+- *  This program is distributed in the hope that it will be useful,
+- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- *  GNU Library General Public License for more details.
++ *	This program is distributed in the hope that it will be useful,
++ *	but WITHOUT ANY WARRANTY; without even the implied warranty of
++ *	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	See the
++ *	GNU Library General Public License for more details.
+  *
+- *  Read the full text in the LICENSE.GPL file in the doc directory.
++ *	Read the full text in the LICENSE.GPL file in the doc directory.
+  */
+ 
+ #ifndef __PLUGINS_GAZSIM_NAVGRAPH_GENERATOR_THREAD_H_
+@@ -32,47 +32,47 @@
+ //gazebo headers
+ #include <plugins/gazebo/aspect/gazebo.h>
+ 
+-class GazsimNavgraphGeneratorThread
+-: public fawkes::Thread,
+-//public fawkes::ClockAspect,	//TODO is this needed? currently not, but maybe one should always implement a timeout?
+-  public fawkes::LoggingAspect,
+-  public fawkes::ConfigurableAspect,
+-  public fawkes::BlackBoardAspect,
+-  public fawkes::BlockedTimingAspect,
+-  public fawkes::GazeboAspect
++class GazsimNavgraphGeneratorThread:
++	public fawkes::Thread,
++	//public fawkes::ClockAspect,	//TODO is this needed? currently not, but maybe one should always implement a timeout?
++	public fawkes::LoggingAspect,
++	public fawkes::ConfigurableAspect,
++	public fawkes::BlackBoardAspect,
++	public fawkes::BlockedTimingAspect,
++	public fawkes::GazeboAspect
+ {
+- public:
+-  GazsimNavgraphGeneratorThread();
++public:
++	GazsimNavgraphGeneratorThread();
+ 
+-  virtual void init();
+-  virtual void loop();
+-  virtual void finalize();
+- private:
+-  //controlling flags
+-  bool task_finished_;
+-  bool computation_is_running_;
++	virtual void init();
++	virtual void loop();
++	virtual void finalize();
++private:
++	//controlling flags
++	bool task_finished_;
++	bool computation_is_running_;
+ 
+-  //Subscribers to receive tag positions from gazebo
+-  std::vector<std::string> tags_;
+-  std::vector<std::string> related_mps_;
+-  std::vector<gazebo::transport::SubscriberPtr> subscriber_tags_;
++	//Subscribers to receive tag positions from gazebo
++	std::vector<std::string> tags_;
++	std::vector<std::string> related_mps_;
++	std::vector<gazebo::transport::SubscriberPtr> subscriber_tags_;
+ 
+-  //navgraph generator interface
+-  std::string nav_gen_if_name_;
+-  fawkes::NavGraphWithMPSGeneratorInterface *nav_gen_if_;
++	//navgraph generator interface
++	std::string nav_gen_if_name_;
++	fawkes::NavGraphWithMPSGeneratorInterface *nav_gen_if_;
+ 
+-  //list of poses of the tags
+-  std::map<int,gazebo::msgs::Pose> tag_msgs_;
++	//list of poses of the tags
++	std::map<int,gazebo::msgs::Pose> tag_msgs_;
+ 
+-  //handler function for incoming messages about the tag positions
+-  void on_tag_msg(ConstPosePtr &msg);
++	//handler function for incoming messages about the tag positions
++	void on_tag_msg(ConstPosePtr &msg);
+ 
+-  //extract mpsID ordered by tagID
+-  std::map<int,std::string> mps_id_;
+-  void get_mpsID_by_tagID();
++	//extract mpsID ordered by tagID
++	std::map<int,std::string> mps_id_;
++	void get_mpsID_by_tagID();
+ 
+-  //send station msg with pose information to navgraph generator
+-  void send_station_msg(int id, gazebo::msgs::Pose pose);
++	//send station msg with pose information to navgraph generator
++	void send_station_msg(int id, gazebo::msgs::Pose pose);
+ };
+ 
+ #endif
+-- 
+1.9.3
+
+
+From 4b6056ca88d7bfe3abd1257c800db50c47b684d2 Mon Sep 17 00:00:00 2001
+From: David Schmidt <david.schmidt@rwth-aachen.de>
+Date: Mon, 11 Apr 2016 19:03:09 +0200
+Subject: [PATCH 05/10] gazsim_navgraph_generator: removed exploration navgraph
+ points
+
+---
+ .../gazsim_navgraph_generator_plugin.cpp           | 23 +++---
+ .../gazsim_navgraph_generator_thread.cpp           | 81 +++++++++++++---------
+ .../gazsim_navgraph_generator_thread.h             | 21 +++---
+ 3 files changed, 69 insertions(+), 56 deletions(-)
+
+diff --git a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_plugin.cpp b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_plugin.cpp
+index 91a13c7..4f02970 100644
+--- a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_plugin.cpp
++++ b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_plugin.cpp
+@@ -27,18 +27,17 @@ using namespace fawkes;
+ /** Plugin to generate navgraph without exploration phase in simulation
+  * @author David Schmidt
+  */
+-class GazsimNavgraphGeneratorPlugin : public fawkes::Plugin
+-{
+- public:
+-  /** Constructor.
+-   * @param config Fawkes configuration
+-   */
+-  GazsimNavgraphGeneratorPlugin(Configuration *config)
+-    : Plugin(config)
+-  {
+-    thread_list.push_back(new GazsimNavgraphGeneratorThread());
+-  }
++class GazsimNavgraphGeneratorPlugin: public fawkes::Plugin {
++public:
++	/** Constructor.
++	 * @param config Fawkes configuration
++	 */
++	GazsimNavgraphGeneratorPlugin(Configuration *config) :
++			Plugin(config) {
++		thread_list.push_back(new GazsimNavgraphGeneratorThread());
++	}
+ };
+ 
+-PLUGIN_DESCRIPTION("Gazsim Navgraph Generator Plugin for generating navgraph without exploration phase")
++PLUGIN_DESCRIPTION(
++        "Gazsim Navgraph Generator Plugin for generating navgraph without exploration phase")
+ EXPORT_PLUGIN(GazsimNavgraphGeneratorPlugin)
+diff --git a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp
+index 5ea0d7a..98223cb 100644
+--- a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp
++++ b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp
+@@ -20,10 +20,8 @@
+ 
+ #include <string>
+ #include <unordered_map>
+-//#include <tf/types.h>
+-//#include <interfaces/Position3DInterface.h>
+ #include <interfaces/NavGraphWithMPSGeneratorInterface.h>
+-#include <tf/types.h>
++
+ #include "gazsim_navgraph_generator_thread.h"
+ 
+ using namespace fawkes;
+@@ -35,9 +33,9 @@ using namespace fawkes;
+ 
+ /** Constructor. */
+ GazsimNavgraphGeneratorThread::GazsimNavgraphGeneratorThread() :
+-		Thread("GazsimNavgraphGeneratorThread", Thread::OPMODE_WAITFORWAKEUP), BlockedTimingAspect(
+-				BlockedTimingAspect::WAKEUP_HOOK_WORLDSTATE), task_finished_(false), computation_is_running_(
+-				false) {
++		Thread("GazsimNavgraphGeneratorThread", Thread::OPMODE_WAITFORWAKEUP),
++		BlockedTimingAspect(BlockedTimingAspect::WAKEUP_HOOK_WORLDSTATE),
++		task_finished_(false), computation_is_running_(false) {
+ }
+ 
+ void GazsimNavgraphGeneratorThread::init() {
+@@ -45,21 +43,22 @@ void GazsimNavgraphGeneratorThread::init() {
+ 
+ 	//read config values
+ 	tags_ = config->get_strings("/gazsim/navgraph-generator/all-active-tags");
+-	related_mps_ = config->get_strings("/gazsim/navgraph-generator/related-mps");
++	related_mps_ = config->get_strings(
++	        "/gazsim/navgraph-generator/related-mps");
+ 	nav_gen_if_name_ = config->get_string(
+-			"/gazsim/navgraph-generator/nav-gen-if-name");
++	        "/gazsim/navgraph-generator/nav-gen-if-name");
+ 
+ 	//open interfaces
+-	//TODO error reports, that we need writing access however we cant, because somebody else has
+-	//	it also should be sufficient to open for reading, in the first place
+-	nav_gen_if_ = blackboard->open_for_reading<
+-			fawkes::NavGraphWithMPSGeneratorInterface>(nav_gen_if_name_.data());
++	nav_gen_if_ = blackboard
++	        ->open_for_reading<fawkes::NavGraphWithMPSGeneratorInterface>(
++	        nav_gen_if_name_.data());
+ 
+ 	//subscribing to gazebo tag messages
+ 	for (unsigned i = 0; i < tags_.size(); ++i)
+ 		subscriber_tags_.push_back(
+-				gazebo_world_node->Subscribe(tags_[i],
+-						&GazsimNavgraphGeneratorThread::on_tag_msg, this));
++		        gazebo_world_node->Subscribe(
++		                tags_[i], &GazsimNavgraphGeneratorThread::on_tag_msg,
++		                this));
+ 	tag_msgs_.clear();
+ 
+ 	//sort the mpsIDs to the tagIDs in mps_id_
+@@ -75,10 +74,12 @@ void GazsimNavgraphGeneratorThread::loop() {
+ 		return;
+ 	//check if computation of navgraph is running
+ 	if (computation_is_running_) {
++		nav_gen_if_->read();
+ 		if (nav_gen_if_->is_final()) {
+ 			task_finished_ = true;
+ 			computation_is_running_ = false;
+-			//TODO close interface nav_gen_if_
++			blackboard->close(nav_gen_if_);
++			logger->log_info(name(), "Navgraph is generated!");
+ 		}
+ 		return;
+ 	}
+@@ -87,15 +88,28 @@ void GazsimNavgraphGeneratorThread::loop() {
+ 		return;
+ 	//send the position of all tags
+ 	for (std::map<int, gazebo::msgs::Pose>::iterator it = tag_msgs_.begin();
+-			it != tag_msgs_.end(); ++it) {
+-		logger->log_info(name(), "tag %i gets sent to NavgraphGenerator.",
+-				(*it).first);
++	        it != tag_msgs_.end(); ++it) {
++//		logger->log_info(name(), "tag %i gets sent to NavgraphGenerator.",
++//		                 (*it).first);
+ 		send_station_msg((*it).first, (*it).second);
+ 	}
+-	nav_gen_if_->msgq_enqueue(
+-			new NavGraphWithMPSGeneratorInterface::ComputeMessage());
++	bool* allFalse = new bool[24];
++	for (int i = 0; i < 24; ++i)
++		allFalse[i] = false;
++	NavGraphWithMPSGeneratorInterface::SetExplorationZonesMessage* delete_explo_navgraph_msg =
++	        new NavGraphWithMPSGeneratorInterface::SetExplorationZonesMessage(allFalse);
++	//delete_explo_navgraph_msg->set_zones(allFalse);
++	nav_gen_if_->msgq_enqueue(delete_explo_navgraph_msg);
++	compute_msg_ = new NavGraphWithMPSGeneratorInterface::ComputeMessage();
++	nav_gen_if_->msgq_enqueue(compute_msg_);
+ 	computation_is_running_ = true;
+-	//TODO unsubscribe all subcribers in subscriber_tags_
++
++	logger->log_info(name(), "Start unsubscribing!");
++	while (!subscriber_tags_.empty()) {
++		subscriber_tags_.back()->Unsubscribe();
++		subscriber_tags_.pop_back();
++	}
++	logger->log_info(name(), "Finished unsubscribing!");
+ }
+ 
+ void GazsimNavgraphGeneratorThread::on_tag_msg(ConstPosePtr &msg) {
+@@ -107,8 +121,8 @@ void GazsimNavgraphGeneratorThread::on_tag_msg(ConstPosePtr &msg) {
+ void GazsimNavgraphGeneratorThread::get_mpsID_by_tagID() {
+ 	if (tags_.size() != related_mps_.size()) {
+ 		logger->log_error(name(),
+-				"There are %i tags defined, but %i!=%i related mps!", tags_.size(),
+-				related_mps_.size(), tags_.size());
++		                  "There are %i tags defined, but %i!=%i related mps!",
++		                  tags_.size(), related_mps_.size(), tags_.size());
+ 		return;
+ 	}
+ 	for (unsigned i = 0; i < tags_.size(); ++i) {
+@@ -116,16 +130,16 @@ void GazsimNavgraphGeneratorThread::get_mpsID_by_tagID() {
+ 		int slash = tags_[i].substr(underscore + 1).find('/');
+ 		int id = std::atoi(tags_[i].substr(underscore + 1, slash).data());
+ 		mps_id_[id] = related_mps_[i];
+-		logger->log_info(name(),"Full tag name:  %s", tags_[i].data());
+-		logger->log_info(name(),"Extracted id:   %i", id);
+-		logger->log_info(name(),"Related MPS-ID: %s", mps_id_[id].data());
++//		logger->log_info(name(), "Full tag name:  %s", tags_[i].data());
++//		logger->log_info(name(), "Extracted id:   %i", id);
++//		logger->log_info(name(), "Related MPS-ID: %s", mps_id_[id].data());
+ 	}
+ }
+ 
+ void GazsimNavgraphGeneratorThread::send_station_msg(int id,
+                                                      gazebo::msgs::Pose pose) {
+ 	NavGraphWithMPSGeneratorInterface::UpdateStationByTagMessage* stationMsg =
+-			new NavGraphWithMPSGeneratorInterface::UpdateStationByTagMessage();
++	        new NavGraphWithMPSGeneratorInterface::UpdateStationByTagMessage();
+ 	stationMsg->set_id(mps_id_[id].data());
+ 	stationMsg->set_side(NavGraphWithMPSGeneratorInterface::Side::INPUT);
+ 	stationMsg->set_frame("/map");
+@@ -136,11 +150,12 @@ void GazsimNavgraphGeneratorThread::send_station_msg(int id,
+ 	stationMsg->set_tag_rotation(1, pose.orientation().y());
+ 	stationMsg->set_tag_rotation(2, pose.orientation().z());
+ 	stationMsg->set_tag_rotation(3, pose.orientation().w());
+-	double tag_orientation=tf::get_yaw(tf::Quaternion(pose.orientation().x(),pose.orientation().y(),
+-	                                                  pose.orientation().z(),pose.orientation().w()));
+-	logger->log_info(name(),"ID:%i",id);
+-	logger->log_info(name(),"Name:%s",mps_id_[id].data());
+-	logger->log_info(name(),"Position:%f,%f,%f",pose.position().x(),pose.position().y(),pose.position().z());
+-	logger->log_info(name(),"Rotation:%f",tag_orientation);
++	/*
++	 double tag_orientation=fawkes::tf::get_yaw(pose);
++	 logger->log_info(name(),"ID:%i",id);
++	 logger->log_info(name(),"Name:%s",mps_id_[id].data());
++	 logger->log_info(name(),"Position:%f,%f,%f",pose.position().x(),pose.position().y(),pose.position().z());
++	 logger->log_info(name(),"Rotation:%f",tag_orientation);
++	 */
+ 	nav_gen_if_->msgq_enqueue(stationMsg);
+ }
+diff --git a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.h b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.h
+index 1b48879..4a18d10 100644
+--- a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.h
++++ b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.h
+@@ -22,7 +22,7 @@
+ #define __PLUGINS_GAZSIM_NAVGRAPH_GENERATOR_THREAD_H_
+ 
+ #include <core/threading/thread.h>
+-//#include <aspect/clock.h>	//TODO corresponds to next TODO
++//#include <aspect/clock.h>
+ #include <aspect/configurable.h>
+ #include <aspect/logging.h>
+ #include <aspect/blackboard.h>
+@@ -33,14 +33,12 @@
+ #include <plugins/gazebo/aspect/gazebo.h>
+ 
+ class GazsimNavgraphGeneratorThread:
+-	public fawkes::Thread,
+-	//public fawkes::ClockAspect,	//TODO is this needed? currently not, but maybe one should always implement a timeout?
+-	public fawkes::LoggingAspect,
+-	public fawkes::ConfigurableAspect,
+-	public fawkes::BlackBoardAspect,
+-	public fawkes::BlockedTimingAspect,
+-	public fawkes::GazeboAspect
+-{
++        public fawkes::Thread,
++        //public fawkes::ClockAspect,
++        public fawkes::LoggingAspect,
++        public fawkes::ConfigurableAspect,
++        public fawkes::BlackBoardAspect, public fawkes::BlockedTimingAspect,
++        public fawkes::GazeboAspect {
+ public:
+ 	GazsimNavgraphGeneratorThread();
+ 
+@@ -51,6 +49,7 @@ private:
+ 	//controlling flags
+ 	bool task_finished_;
+ 	bool computation_is_running_;
++	fawkes::NavGraphWithMPSGeneratorInterface::ComputeMessage* compute_msg_;
+ 
+ 	//Subscribers to receive tag positions from gazebo
+ 	std::vector<std::string> tags_;
+@@ -62,13 +61,13 @@ private:
+ 	fawkes::NavGraphWithMPSGeneratorInterface *nav_gen_if_;
+ 
+ 	//list of poses of the tags
+-	std::map<int,gazebo::msgs::Pose> tag_msgs_;
++	std::map<int, gazebo::msgs::Pose> tag_msgs_;
+ 
+ 	//handler function for incoming messages about the tag positions
+ 	void on_tag_msg(ConstPosePtr &msg);
+ 
+ 	//extract mpsID ordered by tagID
+-	std::map<int,std::string> mps_id_;
++	std::map<int, std::string> mps_id_;
+ 	void get_mpsID_by_tagID();
+ 
+ 	//send station msg with pose information to navgraph generator
+-- 
+1.9.3
+
+
+From 55972ce9b778146582cf53b06d27ed87a9354934 Mon Sep 17 00:00:00 2001
+From: Frederik Zwilling <zwilling@kbsg.rwth-aachen.de>
+Date: Tue, 12 Apr 2016 15:45:48 +0200
+Subject: [PATCH 06/10] gazsim-script: create navgraph automaticall with -t
+
+---
+ etc/scripts/gazsim-startup.bash | 12 +++++++++---
+ etc/scripts/gazsim.bash         | 11 ++++++++---
+ 2 files changed, 17 insertions(+), 6 deletions(-)
+
+diff --git a/etc/scripts/gazsim-startup.bash b/etc/scripts/gazsim-startup.bash
+index 16b5021..4c43625 100755
+--- a/etc/scripts/gazsim-startup.bash
++++ b/etc/scripts/gazsim-startup.bash
+@@ -28,6 +28,7 @@ OPTIONS:
+                   ($FAWKES_DIR/bin by default)
+    -g             Run Fawkes in gdb
+    -v             Run Fawkes in valgrind
++   -t             Skip Exploration and add all navgraph points
+   GAZEBO:
+    -e arg         Record Replay
+ EOF
+@@ -48,7 +49,9 @@ AGENT=
+ FAWKES_BIN=$FAWKES_DIR/bin
+ KEEP=
+ GDB=
+-while getopts “hx:c:lrm:sp:i:f:e:da4kgv” OPTION
++SKIP_EXPLORATION=
++
++while getopts “hx:c:lrm:sp:i:f:e:da4kgvt” OPTION
+ do
+      case $OPTION in
+          h)
+@@ -102,6 +105,9 @@ do
+          m)
+              META_PLUGIN=,$OPTARG
+              ;;
++	 t)
++	     SKIP_EXPLORATION=",gazsim-navgraph-generator"
++	     ;;
+ 	 f)
+ 	     FAWKES_BIN=$OPTARG
+ 	     ;;
+@@ -146,9 +152,9 @@ case $COMMAND in
+ 	$opti gzclient
+ 	;;
+     fawkes )
+-	# ulimit -c unlimited
++	ulimit -c unlimited
+ 	export ROS_MASTER_URI=http://localhost:$PORT
+-	robotino_plugins=gazsim-meta-robotino$ROS$VISION$AGENT$META_PLUGIN
++	robotino_plugins=gazsim-meta-robotino$ROS$VISION$AGENT$META_PLUGIN$SKIP_EXPLORATION
+ 	$GDB $FAWKES_BIN/fawkes -c $CONF/$ROBOTINO.yaml -p $robotino_plugins
+ 	if [ -n "$GDB" ]; then
+ 		echo Fawkes exited, press return to close shell
+diff --git a/etc/scripts/gazsim.bash b/etc/scripts/gazsim.bash
+index e5b4042..463b810 100755
+--- a/etc/scripts/gazsim.bash
++++ b/etc/scripts/gazsim.bash
+@@ -30,13 +30,14 @@ OPTIONS:
+                   ($FAWKES_DIR/bin by default)
+    -g             Run Fawkes in gdb
+    -v             Run Fawkes in valgrind
++   -t             Skip Exploration and add all navgraph points
+ EOF
+ }
+ 
+  
+ #check options
+ 
+-COMMAND=
++COMMAND=start
+ CONF=
+ VISUALIZATION=
+ ROS=
+@@ -52,8 +53,9 @@ META_PLUGIN=
+ START_GAZEBO=true
+ TERM_GEOMETRY=105x56
+ GDB=
++SKIP_EXPLORATION=
+ 
+-while getopts “hx:c:lrksn:e:dm:aof:p:gv” OPTION
++while getopts “hx:c:lrksn:e:dm:aof:p:gvt” OPTION
+ do
+      case $OPTION in
+          h)
+@@ -123,6 +125,9 @@ do
+ 	 f)
+ 	     FIRST_ROBOTINO_NUMBER=$OPTARG
+ 	     ;;
++	 t)
++	     SKIP_EXPLORATION="-t"
++	     ;;
+ 	 p)
+ 	     FAWKES_BIN=$OPTARG/bin
+ 	     ;;
+@@ -217,7 +222,7 @@ if [  $COMMAND  == start ]; then
+     #start fawkes for robotinos
+     for ((ROBO=$FIRST_ROBOTINO_NUMBER ; ROBO<$(($FIRST_ROBOTINO_NUMBER+$NUM_ROBOTINOS)) ;ROBO++))
+     do
+-	OPEN_COMMAND="$OPEN_COMMAND --tab -e 'bash -c \"export TAB_START_TIME=$(date +%s); $script_path/wait-at-first-start.bash 10; $startup_script_location -x fawkes -p 1131$ROBO -i robotino$ROBO $KEEP $CONF $ROS $GDB $META_PLUGIN $DETAILED -f $FAWKES_BIN\"'"
++	OPEN_COMMAND="$OPEN_COMMAND --tab -e 'bash -c \"export TAB_START_TIME=$(date +%s); $script_path/wait-at-first-start.bash 10; $startup_script_location -x fawkes -p 1131$ROBO -i robotino$ROBO $KEEP $CONF $ROS $GDB $META_PLUGIN $DETAILED -f $FAWKES_BIN $SKIP_EXPLORATION\"'"
+     done
+ 
+     if $START_GAZEBO
+-- 
+1.9.3
+
+
+From 4d483b932417e112e359a164c652a72b637b462c Mon Sep 17 00:00:00 2001
+From: Frederik Zwilling <zwilling@kbsg.rwth-aachen.de>
+Date: Tue, 12 Apr 2016 15:46:28 +0200
+Subject: [PATCH 07/10] gazsim-navgraph-generator: skip unsubscribing to avoid
+ seg in gazebo 4
+
+The destructor of the subscriber unsubscribes automatically. In Gazebo
+4, this causes a segmentation fault when it was unsubscribed before.
+Without unsubscribing it works in both versions.
+---
+ .../gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp       | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp
+index 98223cb..81aa745 100644
+--- a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp
++++ b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp
+@@ -106,7 +106,6 @@ void GazsimNavgraphGeneratorThread::loop() {
+ 
+ 	logger->log_info(name(), "Start unsubscribing!");
+ 	while (!subscriber_tags_.empty()) {
+-		subscriber_tags_.back()->Unsubscribe();
+ 		subscriber_tags_.pop_back();
+ 	}
+ 	logger->log_info(name(), "Finished unsubscribing!");
+-- 
+1.9.3
+
+
+From e9051cdbf62eff9452fc526686c45032aee89aa5 Mon Sep 17 00:00:00 2001
+From: David Schmidt <david.schmidt@rwth-aachen.de>
+Date: Tue, 12 Apr 2016 16:01:45 +0200
+Subject: [PATCH 08/10] gazsim_navgraph_generator: only take well placed tags
+ into account
+
+---
+ .../gazsim_navgraph_generator_thread.cpp                          | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp
+index 81aa745..cda5cf8 100644
+--- a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp
++++ b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp
+@@ -97,7 +97,8 @@ void GazsimNavgraphGeneratorThread::loop() {
+ 	for (int i = 0; i < 24; ++i)
+ 		allFalse[i] = false;
+ 	NavGraphWithMPSGeneratorInterface::SetExplorationZonesMessage* delete_explo_navgraph_msg =
+-	        new NavGraphWithMPSGeneratorInterface::SetExplorationZonesMessage(allFalse);
++	        new NavGraphWithMPSGeneratorInterface::SetExplorationZonesMessage(
++	                allFalse);
+ 	//delete_explo_navgraph_msg->set_zones(allFalse);
+ 	nav_gen_if_->msgq_enqueue(delete_explo_navgraph_msg);
+ 	compute_msg_ = new NavGraphWithMPSGeneratorInterface::ComputeMessage();
+@@ -106,6 +107,8 @@ void GazsimNavgraphGeneratorThread::loop() {
+ 
+ 	logger->log_info(name(), "Start unsubscribing!");
+ 	while (!subscriber_tags_.empty()) {
++		//subscriber_tags_.back()->Unsubscribe();
++		//gazebo 4.x seems to unsubscribe by deleting pointer on next line
+ 		subscriber_tags_.pop_back();
+ 	}
+ 	logger->log_info(name(), "Finished unsubscribing!");
+@@ -114,6 +117,9 @@ void GazsimNavgraphGeneratorThread::loop() {
+ void GazsimNavgraphGeneratorThread::on_tag_msg(ConstPosePtr &msg) {
+ 	int underscore = msg->name().find('_');
+ 	int id = std::atoi(msg->name().substr(underscore + 1).data());
++	if (msg->position().x() > -1 && msg->position().x() < 1
++	    && msg->position().y() < 0)
++		return;
+ 	tag_msgs_[id].CopyFrom(*msg);
+ }
+ 
+-- 
+1.9.3
+
+
+From 30682f15238b31b5b12177274e4f33af8ad5cafb Mon Sep 17 00:00:00 2001
+From: Frederik Zwilling <zwilling@kbsg.rwth-aachen.de>
+Date: Wed, 13 Apr 2016 13:27:54 +0200
+Subject: [PATCH 09/10] gazsim-nagraph-generator: wait for transform before
+ adding tags
+
+When tags are added before the transforms are ready (e.g. at startup),
+UpdateStationByTag messages are ignored. Therefore we have to wait until
+the tf is ready.
+---
+ .../gazsim_navgraph_generator_thread.cpp                         | 9 ++++++++-
+ .../gazsim-navgraph-generator/gazsim_navgraph_generator_thread.h | 5 ++++-
+ 2 files changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp
+index cda5cf8..7a8684d 100644
+--- a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp
++++ b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.cpp
+@@ -86,6 +86,13 @@ void GazsimNavgraphGeneratorThread::loop() {
+ 	//check if all tag-messages were received
+ 	if (tag_msgs_.size() < tags_.size())
+ 		return;
++
++	//check if the transform map nedded by navgraph-generator exists otherwise wait
++	if(!tf_listener->frame_exists("map")){
++    logger->log_debug(name(), "Waiting until frame map exists");
++    return;
++  }
++	
+ 	//send the position of all tags
+ 	for (std::map<int, gazebo::msgs::Pose>::iterator it = tag_msgs_.begin();
+ 	        it != tag_msgs_.end(); ++it) {
+@@ -147,7 +154,7 @@ void GazsimNavgraphGeneratorThread::send_station_msg(int id,
+ 	        new NavGraphWithMPSGeneratorInterface::UpdateStationByTagMessage();
+ 	stationMsg->set_id(mps_id_[id].data());
+ 	stationMsg->set_side(NavGraphWithMPSGeneratorInterface::Side::INPUT);
+-	stationMsg->set_frame("/map");
++	stationMsg->set_frame("map");
+ 	stationMsg->set_tag_translation(0, pose.position().x());
+ 	stationMsg->set_tag_translation(1, pose.position().y());
+ 	stationMsg->set_tag_translation(2, pose.position().z());
+diff --git a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.h b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.h
+index 4a18d10..2d7d0ae 100644
+--- a/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.h
++++ b/src/plugins/gazebo/gazsim-navgraph-generator/gazsim_navgraph_generator_thread.h
+@@ -28,6 +28,7 @@
+ #include <aspect/blackboard.h>
+ #include <aspect/blocked_timing.h>
+ #include <interfaces/NavGraphWithMPSGeneratorInterface.h>
++#include <aspect/tf.h>
+ 
+ //gazebo headers
+ #include <plugins/gazebo/aspect/gazebo.h>
+@@ -37,7 +38,9 @@ class GazsimNavgraphGeneratorThread:
+         //public fawkes::ClockAspect,
+         public fawkes::LoggingAspect,
+         public fawkes::ConfigurableAspect,
+-        public fawkes::BlackBoardAspect, public fawkes::BlockedTimingAspect,
++        public fawkes::BlackBoardAspect,
++	      public fawkes::BlockedTimingAspect,
++	      public fawkes::TransformAspect,
+         public fawkes::GazeboAspect {
+ public:
+ 	GazsimNavgraphGeneratorThread();
+-- 
+1.9.3
+
+
+From 02dc2a6f4d73e30dc5e7610ae54cc4ef32a1940a Mon Sep 17 00:00:00 2001
+From: Frederik Zwilling <zwilling@kbsg.rwth-aachen.de>
+Date: Wed, 1 Jun 2016 09:48:30 +0200
+Subject: [PATCH 10/10] gazsim-scripts: no 'ulimit -c unlimited' by default
+
+---
+ etc/scripts/gazsim-startup.bash | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/etc/scripts/gazsim-startup.bash b/etc/scripts/gazsim-startup.bash
+index 4c43625..cdd9a9a 100755
+--- a/etc/scripts/gazsim-startup.bash
++++ b/etc/scripts/gazsim-startup.bash
+@@ -152,7 +152,7 @@ case $COMMAND in
+ 	$opti gzclient
+ 	;;
+     fawkes )
+-	ulimit -c unlimited
++	# ulimit -c unlimited
+ 	export ROS_MASTER_URI=http://localhost:$PORT
+ 	robotino_plugins=gazsim-meta-robotino$ROS$VISION$AGENT$META_PLUGIN$SKIP_EXPLORATION
+ 	$GDB $FAWKES_BIN/fawkes -c $CONF/$ROBOTINO.yaml -p $robotino_plugins
+-- 
+1.9.3
+
