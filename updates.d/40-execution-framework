@@ -1,0 +1,32 @@
+#!/bin/bash
+
+##########################################################################
+#  update-execution-framework - update the RCLL execution framework for ICAPS
+#
+#  Created: Mon June 06 14:00:00 2016
+#  Copyright  2016  Eric Timmons
+##########################################################################
+
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation; either version 2 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU Library General Public License for more details.
+#
+#  Read the full text in the LICENSE.GPL file in the doc directory.
+
+# Assumes $SIMSTICK_UPDATE_PATH to be set by simstick-update (stage 0)
+
+source functions.sh
+print_sechead "Updating Execution Framework"
+
+SCRIPT_NAME=$(basename $0)
+
+ansible-pull -U git@git.mers.csail.mit.edu:enterprise/rcll-ansible.git \
+						 -c local -i "localhost," \
+						 --private-key=${SIMSTICK_UPDATE_PATH}/keys/git.mers-deploy-key-id_rsa \
+						 site.yml || exit $?
