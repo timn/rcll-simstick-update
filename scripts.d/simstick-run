@@ -29,7 +29,8 @@ echo "They appear because of running with a smaller number of robots."
 echo
 
 pushd ~/robotics/fawkes-robotino/bin >/dev/null
-./gazsim.bash -x start -r -n 1 -t -a \
-	--ros-launch-main rcll_fawkes_sim:rcll_fawkes_sim_all_1robot.launch
+./gazsim.bash -x start -r -n 1 -t -a
+
+#	--ros-launch-main rcll_fawkes_sim:rcll_fawkes_sim_all_1robot.launch
 popd >/dev/null
 
