@@ -34,6 +34,7 @@ fi
 pushd $GAZEBO_RCLL >/dev/null
 
 git_repo_check || exit $?
+git_repo_stash || exit $?
 git_repo_fetch || exit $?
 git_repo_pull_cond_build || exit $?
 

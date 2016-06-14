@@ -20,6 +20,7 @@ for p in $ROS_PACKAGES; do
 		pwd
 		
 		git_repo_check || exit $?
+		git_repo_stash || exit $?
 		git_repo_fetch || exit $?
 		git_repo_pull_cond_build "catkin_make -C $ws_dir --force-cmake --pkg $p" || exit $?
 
