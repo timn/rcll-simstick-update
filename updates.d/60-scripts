@@ -36,4 +36,4 @@ for s in $SIMSTICK_UPDATE_PATH/scripts.d/???*; do
 				ln -s $s "$HOME/bin/$SCRIPT_NAME" || ( echo "FAILED" && exit -1 )
 				echo "done"
 		fi
-fi
+done
