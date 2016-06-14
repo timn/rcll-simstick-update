@@ -1,0 +1,34 @@
+#!/bin/bash
+
+##########################################################################
+#  add-rebuild - Add rebuild command if not existing
+#
+#  Created: Tue Jun 14 10:03:20 2016
+#  Copyright  2016  Tim Niemueller [www.niemueller.de]
+##########################################################################
+
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation; either version 2 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU Library General Public License for more details.
+#
+#  Read the full text in the LICENSE.GPL file in the doc directory.
+
+# Assumes $SIMSTICK_UPDATE_PATH to be set by simstick-update (stage 0)
+
+source functions.sh
+print_sechead "Rebuild script installation"
+
+SCRIPT_NAME=$(basename $0)
+
+if [ -L ~/bin/simstick-rebuild ]; then
+		echo "Rebuild already installed"
+else
+		echo "Installing Script"
+		ln -s $SIMSTICK_UPDATE_PATH/scripts.d/simstick-rebuild ~/bin/simstick-rebuild
+fi
