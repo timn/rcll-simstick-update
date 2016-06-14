@@ -1,9 +1,9 @@
 #!/bin/bash
 
 ##########################################################################
-#  add-rebuild - Add rebuild command if not existing
+#  scripts - Link scripts
 #
-#  Created: Tue Jun 14 10:03:20 2016
+#  Created: Tue Jun 14 11:13:56 2016
 #  Copyright  2016  Tim Niemueller [www.niemueller.de]
 ##########################################################################
 
@@ -22,13 +22,18 @@
 # Assumes $SIMSTICK_UPDATE_PATH to be set by simstick-update (stage 0)
 
 source functions.sh
-print_sechead "Rebuild script installation"
+print_sechead "Script installation"
 
 SCRIPT_NAME=$(basename $0)
 
-if [ -L ~/bin/simstick-rebuild ]; then
-		echo "Rebuild already installed"
-else
-		echo "Installing Script"
-		ln -s $SIMSTICK_UPDATE_PATH/scripts.d/simstick-rebuild ~/bin/simstick-rebuild
+for s in $SIMSTICK_UPDATE_PATH/scripts.d/???*; do
+		SCRIPT_NAME=$(basename $s)
+		echo -n "Checking $SCRIPT_NAME..."
+		if [ -L "~/bin/$SCRIPT_NAME" ]; then
+				echo "already installed"
+		else
+				echo -n "installing..."
+				ln -s $s ~/bin/$(SCRIPT_NAME) || echo "FAILED" && exit -1
+				echo "done"
+		fi
 fi
