@@ -59,6 +59,15 @@ git_repo_fetch()
 		fi
 }
 
+# Stash any local modifications
+git_repo_stash()
+{
+		if ! git stash; then
+				print_fail "git_repo_stash" "Failed to stash changes"
+				return 1
+		fi
+}
+
 git_repo_changed()
 {		
 		local LOCAL_HEAD=$(git rev-parse @)      || return 1
