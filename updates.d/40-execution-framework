@@ -26,9 +26,6 @@ print_sechead "Updating Execution Framework"
 
 SCRIPT_NAME=$(basename $0)
 
-echo "Skipping"
-exit 0
-
 chmod 600 ${SIMSTICK_UPDATE_PATH}/keys/git.mers-deploy-key-id_rsa
 
 ansible-pull -U git@git.mers.csail.mit.edu:enterprise/rcll-ansible.git \
