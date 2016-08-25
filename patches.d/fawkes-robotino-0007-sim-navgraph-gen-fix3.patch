@@ -1,0 +1,347 @@
+diff -urN fawkes-robotino/cfg/navgraph-basis.yaml~ fawkes-robotino.simfix/cfg/navgraph-basis.yaml~
+--- fawkes-robotino/cfg/navgraph-basis.yaml~	1970-01-01 01:00:00.000000000 +0100
++++ fawkes-robotino.simfix/cfg/navgraph-basis.yaml~	2016-08-25 14:34:18.120598174 +0200
+@@ -0,0 +1,319 @@
++%YAML 1.2
++%TAG ! tag:fawkesrobotics.org,navgraph/
++---
++graph-name: LLSF
++root: SW
++
++default-properties:
++    # Max. distance between actual and target positions to deem the target
++    # reached. This value is for intermediate nodes on a path; m
++    # The value can be overwritten per node in the graph file.
++    - travel_tolerance: 1.5
++
++    # Max. distance between actual and target positions to deem the target
++    # reached. This value is for the last node on a path; m
++    # The value can be overwritten per node in the graph file.
++    - target_tolerance: 0.7
++
++    # Max. distance between actual and target orientation to deem the target
++    # reached. This value is for the last node on a path; rad
++    - orientation_tolerance: 0.6
++
++    # When following a plan the robot will check all upcoming nodes if they
++    # are close to the robot within this tolerance. If so, they take a shortcut
++    # and will go to the node in the plan after the shortcut node.
++    # This is potentially dangerous depending on the graph and navigator as it
++    # might violate the typical graph constraint of only having direct-line-of-tavel
++    # connections. The value can be overidden with a node property of the same name; m
++    - shortcut_tolerance: 1.2
++
++    # Distance from base_link to the MPS to align
++    - align_distance: 0.5
++
++    # Signal position on the table. Z is the table height above ground.
++    - signal_hint_x: 0.035
++    - signal_hint_y: -0.1
++    - signal_hint_z: 0.78
++
++nodes:
++
++# Default point, used only for mps_detect_signal when no or an invalid place= is given
++  - !unconnected
++    name: place-default
++    pos: [1, 1]
++    properties:
++      - only-copy-properties
++
++
++# Exploration Points
++# two points for each cell, so for each mps rotation at least one point can see the tag
++# cyan half:
++
++  - name: Exp-CM1
++    pos: [0.0, 1.5]
++    properties:
++      - orientation_Z1:  -0.9
++      - orientation_Z13: -2.4
++  - name: Exp-CM2
++    pos: [0.0, 3.0]
++    properties:
++      - orientation_Z3:   0.9
++      - orientation_Z15:  2.4
++  - name: Exp-CM3
++    pos: [0.0, 4.5]
++    properties:
++      - orientation_Z4:   0.9
++      - orientation_Z16:  2.4
++
++  - name: Exp-C1
++    pos: [2.0, 1.5]
++    properties:
++      - orientation_Z1:  -2.4
++      - orientation_Z2:   2.4
++  - name: Exp-C2
++    pos: [2.0, 3.0]
++    properties:
++      - orientation_Z2:  -2.4
++      - orientation_Z3:   2.4
++      - orientation_Z6:  -0.9
++  - name: Exp-C3
++    pos: [2.0, 4.5]
++    properties:
++      - orientation_Z4:   2.4
++      - orientation_Z7:  -0.9
++      - orientation_Z8:   0.9
++
++  - name: Exp-C5
++    pos: [4.0, 1.5]
++    properties:
++      - orientation_Z5:  -2.4
++      - orientation_Z9:  -0.9
++  - name: Exp-C6
++    pos: [4.0, 3.0]
++    properties:
++      - orientation_Z6:  -2.4
++      - orientation_Z10: -0.9
++  - name: Exp-C7
++    pos: [4.0, 4.5]
++    properties:
++      - orientation_Z7: -2.4
++      - orientation_Z8:  2.4
++      - orientation_Z11: -0.9
++      - orientation_Z12: 0.5
++
++# magenta half
++
++  - name: Exp-M1
++    pos: [-2.0, 1.5]
++    properties:
++      - orientation_Z13:  -2.4
++      - orientation_Z14:   2.4
++  - name: Exp-M2
++    pos: [-2.0, 3.0]
++    properties:
++      - orientation_Z14:  -2.4
++      - orientation_Z15:   2.4
++      - orientation_Z18:  -0.9
++  - name: Exp-M3
++    pos: [-2.0, 4.5]
++    properties:
++      - orientation_Z16:   2.4
++      - orientation_Z19:  -0.9
++      - orientation_Z20:   0.9
++
++  - name: Exp-M5
++    pos: [-4.0, 1.5]
++    properties:
++      - orientation_Z17:  -2.4
++      - orientation_Z21:  -0.9
++
++  - name: Exp-M6
++    pos: [-4.0, 3.0]
++    properties:
++      - orientation_Z18:  -2.4
++      - orientation_Z22: -0.9
++  - name: Exp-M7
++    pos: [-4.0, 4.5]
++    properties:
++      - orientation_Z19: -2.4
++      - orientation_Z20:  2.4
++      - orientation_Z23: -0.9
++      - orientation_Z24: 0.5
++
++# drive into field points
++# Cyan
++  - !unconnected
++    name: C-ins-out
++    pos: [3.3, -0.55]
++    properties:
++      - always-copy: true
++  - !unconnected
++    name: C-ins-in
++    pos: [3.3, 0.75]
++    properties:
++      - always-copy: true
++## Magenta
++  - !unconnected
++    name: M-ins-out
++    pos: [-3.3, -0.55]
++    properties:
++      - always-copy: true
++  - !unconnected
++    name: M-ins-in
++    pos: [-3.3, 0.75]
++    properties:
++      - always-copy: true
++
++## wait points
++#  - !unconnected
++#    name: WAIT1
++#    pos : [0,1]
++#    properties:
++#      - orientation: 1.57
++#      - always-copy: true
++#      - target_tolerance: 1.5
++
++## Machine points for property generation
++## Positions will be written by the generator
++## Cyan
++ - !unconnected
++   name: C-CS1
++   pos: [0, 0]
++   properties:
++     - only-copy-properties
++     - tag_input: 1
++     - tag_output: 2
++     - input_offset_y: -0.02
++     - output_offset_y: -0.01
++ - !unconnected
++   name: C-CS2
++   pos: [0, 0]
++   properties:
++     - only-copy-properties
++     - tag_input: 17
++     - tag_output: 18
++     - input_offset_x: 0.01
++     - output_offset_x: 0.02
++ - !unconnected
++   name: C-RS1
++   pos: [0, 0]
++   properties:
++     - only-copy-properties
++     - tag_input: 33
++     - tag_output: 34
++ - !unconnected
++   name: C-RS2
++   pos: [0, 0]
++   properties:
++     - only-copy-properties
++     - tag_input: 177
++     - tag_output: 178
++     - input_offset_x: 0.01
++     - output_offset_x: -0.02
++ - !unconnected
++   name: C-BS
++   pos: [0, 0]
++   properties:
++     - only-copy-properties
++     - tag_input: 65
++     - tag_output: 66
++     - input_offset_y: 0
++     - output_offset_y: -0.01
++     - input_offset_x: 0.01
++ - !unconnected
++   name: C-DS
++   pos: [0, 0]
++   properties:
++     - only-copy-properties
++     - tag_input: 81
++     - tag_output: 82
++     - input_offset_y: -0.02
++     - output_offset_y: 0
++     - input_offset_x: -0.02
++#Magenta
++  - !unconnected
++    name: M-CS1
++    pos: [0, 0]
++    properties:
++      - only-copy-properties
++      - tag_input: 97
++      - tag_output: 98
++      - output_offset_x: 0.01
++  - !unconnected
++    name: M-CS2
++    pos: [0, 0]
++    properties:
++      - only-copy-properties
++      - tag_input: 113
++      - tag_output: 114
++  - !unconnected
++    name: M-RS1
++    pos: [0, 0]
++    properties:
++      - only-copy-properties
++      - tag_input: 129
++      - tag_output: 130
++  - !unconnected
++    name: M-RS2
++    pos: [0, 0]
++    properties:
++      - only-copy-properties
++      - tag_input: 145
++      - tag_output: 146
++      - input_offset_x: 0.01
++      - output_offset_x: -0.01
++  - !unconnected
++    name: M-BS
++    pos: [0, 0]
++    properties:
++      - only-copy-properties
++      - tag_input: 161
++      - tag_output: 162
++      - input_offset_x: 0.01
++  - !unconnected
++    name: M-DS
++    pos: [0, 0]
++    properties:
++      - only-copy-properties
++      - tag_input: 49
++      - tag_output: 50
++      - input_offset_x: -0.02
++
++# Possible directional tags:
++# !bidir (bidirectional, default), !dir (directed)
++connections:
++# common
++# connecting edges in Y direction
++  - [Exp-CM1,  Exp-CM2]
++  - [Exp-CM2,  Exp-CM3]
++
++# cyan half
++  # connecting edges in Y direction
++  - [Exp-C1,  Exp-C2]
++  - [Exp-C2,  Exp-C3]
++  - [Exp-C5,  Exp-C6]
++  - [Exp-C6,  Exp-C7]
++
++
++  # connecting edges in X direction
++  - [Exp-CM1,  Exp-C1]
++  - [Exp-CM2,  Exp-C2]
++  - [Exp-CM3,  Exp-C3]
++  - [Exp-C1,  Exp-C5]
++  - [Exp-C2,  Exp-C6]
++  - [Exp-C3,  Exp-C7]
++
++  # connecting edges in Y direction
++  - [Exp-M1,  Exp-M2]
++  - [Exp-M2,  Exp-M3]
++  - [Exp-M5,  Exp-M6]
++  - [Exp-M6,  Exp-M7]
++
++  # connecting edges in X direction
++  - [Exp-CM1,  Exp-M1]
++  - [Exp-CM2,  Exp-M2]
++  - [Exp-CM3,  Exp-M3]
++  - [Exp-M1,  Exp-M5]
++  - [Exp-M2,  Exp-M6]
++  - [Exp-M3,  Exp-M7]
++
+diff -urN fawkes-robotino/src/agents/llsf2015/sim.clp fawkes-robotino.simfix/src/agents/llsf2015/sim.clp
+--- fawkes-robotino/src/agents/llsf2015/sim.clp	2016-01-11 12:01:25.000000000 +0100
++++ fawkes-robotino.simfix/src/agents/llsf2015/sim.clp	2016-08-25 11:21:07.910163595 +0200
+@@ -33,20 +33,6 @@
+   (assert (sim-was-in-exploration))
+ )
+ 
+-(defrule sim-gen-default-navgraph-for-skipped-production
+-  "If the exploration was skipped generate a default navgraph for production before switching to production"
+-  (declare (salience ?*PRIORITY-SIM*))
+-  (not (sim-was-in-exploration))
+-  (change-phase PRODUCTION)
+-  ?sdt <- (sim-default-tag (name ?machine) (side ?side) (frame ?frame) (trans $?trans) (rot $?rot))
+-  (not (default-navgraph-generated))
+-  =>
+-  (retract ?sdt)
+-  (printout t "Using default position of " ?machine crlf)
+-  (assert (found-tag (name ?machine) (side ?side) (frame ?frame)
+-		     (trans ?trans) (rot ?rot)))
+-)
+-
+ (defrule sim-gen-default-navgraph-compute-and-wait-for-generation
+   "If the exploration was skipped generate a default navgraph for production before switching to production"
+   (declare (salience ?*PRIORITY-SIM*))
