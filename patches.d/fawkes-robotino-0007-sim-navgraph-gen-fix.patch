@@ -1,0 +1,77 @@
+diff -urN fawkes-robotino/cfg/navgraph-basis.yaml fawkes-robotino.simfix/cfg/navgraph-basis.yaml
+--- fawkes-robotino/cfg/navgraph-basis.yaml	2016-08-24 10:03:15.643869040 +0200
++++ fawkes-robotino.simfix/cfg/navgraph-basis.yaml	2016-08-25 11:21:48.388411291 +0200
+@@ -142,28 +142,28 @@
+ 
+ # drive into field points
+ # Cyan
+-#  - !unconnected
+-#    name: C-ins-out
+-#    pos: [3.3, -0.55]
+-#    properties:
+-#      - always-copy: true
+-#  - !unconnected
+-#    name: C-ins-in
+-#    pos: [3.3, 0.75]
+-#    properties:
+-#      - always-copy: true
++  - !unconnected
++    name: C-ins-out
++    pos: [3.3, -0.55]
++    properties:
++      - always-copy: true
++  - !unconnected
++    name: C-ins-in
++    pos: [3.3, 0.75]
++    properties:
++      - always-copy: true
+ ## Magenta
+-#  - !unconnected
+-#    name: M-ins-out
+-#    pos: [-3.3, -0.55]
+-#    properties:
+-#      - always-copy: true
+-#  - !unconnected
+-#    name: M-ins-in
+-#    pos: [-3.3, 0.75]
+-#    properties:
+-#      - always-copy: true
+-#
++  - !unconnected
++    name: M-ins-out
++    pos: [-3.3, -0.55]
++    properties:
++      - always-copy: true
++  - !unconnected
++    name: M-ins-in
++    pos: [-3.3, 0.75]
++    properties:
++      - always-copy: true
++
+ ## wait points
+ #  - !unconnected
+ #    name: WAIT1
+diff -urN fawkes-robotino/src/agents/llsf2015/sim.clp fawkes-robotino.simfix/src/agents/llsf2015/sim.clp
+--- fawkes-robotino/src/agents/llsf2015/sim.clp	2016-01-11 12:01:25.000000000 +0100
++++ fawkes-robotino.simfix/src/agents/llsf2015/sim.clp	2016-08-25 11:21:07.910163595 +0200
+@@ -33,20 +33,6 @@
+   (assert (sim-was-in-exploration))
+ )
+ 
+-(defrule sim-gen-default-navgraph-for-skipped-production
+-  "If the exploration was skipped generate a default navgraph for production before switching to production"
+-  (declare (salience ?*PRIORITY-SIM*))
+-  (not (sim-was-in-exploration))
+-  (change-phase PRODUCTION)
+-  ?sdt <- (sim-default-tag (name ?machine) (side ?side) (frame ?frame) (trans $?trans) (rot $?rot))
+-  (not (default-navgraph-generated))
+-  =>
+-  (retract ?sdt)
+-  (printout t "Using default position of " ?machine crlf)
+-  (assert (found-tag (name ?machine) (side ?side) (frame ?frame)
+-		     (trans ?trans) (rot ?rot)))
+-)
+-
+ (defrule sim-gen-default-navgraph-compute-and-wait-for-generation
+   "If the exploration was skipped generate a default navgraph for production before switching to production"
+   (declare (salience ?*PRIORITY-SIM*))
