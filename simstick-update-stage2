@@ -37,7 +37,7 @@ fi
 
 for f in updates.d/*; do
 		if [[ "$f" != *"~" ]]; then
-				$f
+				$f || exit $?
 		fi
 done
 
