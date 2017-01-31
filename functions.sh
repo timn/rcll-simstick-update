@@ -214,7 +214,7 @@ ros_package_dir()
 
 ros_detect()
 {
-		if ! type -P rospack ; then
+		if ! type -P rospack >/dev/null ; then
 				print_fail "ros_detect" "Could not detect rospack"
 				return 1
 		fi
