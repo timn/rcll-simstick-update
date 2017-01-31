@@ -22,7 +22,6 @@
 # Assumes $SIMSTICK_UPDATE_PATH to be set by simstick-update (stage 0)
 
 source functions.sh
-print_sechead "Asserting Fawkes RCLL 2016 release"
 
 SCRIPT_NAME=$(basename $0)
 
