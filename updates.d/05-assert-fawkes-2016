@@ -1,0 +1,39 @@
+#!/bin/bash
+
+##########################################################################
+#  Make sure we are operating on the 2016 version
+#
+#  Created: Tue Jan 31 17:18:12 2017
+#  Copyright  2017  Tim Niemueller [www.niemueller.de]
+##########################################################################
+
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation; either version 2 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU Library General Public License for more details.
+#
+#  Read the full text in the LICENSE.GPL file in the doc directory.
+
+# Assumes $SIMSTICK_UPDATE_PATH to be set by simstick-update (stage 0)
+
+source functions.sh
+print_sechead "Asserting Fawkes RCLL 2016 release"
+
+SCRIPT_NAME=$(basename $0)
+
+if [ -z "$FAWKES_DIR" ];  then
+	 print_fail "$(basename $0)" "FAWKES_DIR has not been set as env var"
+	 exit 1
+fi
+
+if [ ! -d "$FAWKES_DIR/src/agents/rcll2016" ]; then
+		print_fail "simstick-update now requires the RCLL 2016 release!\nPlease see https://www.fawkesrobotics.org/projects/rcll2016-release to upgrade."
+		exit 2
+fi
+
+popd > /dev/null
