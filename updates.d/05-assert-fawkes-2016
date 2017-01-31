@@ -31,7 +31,7 @@ if [ -z "$FAWKES_DIR" ];  then
 fi
 
 if [ ! -d "$FAWKES_DIR/src/agents/rcll2016" ]; then
-		print_fail "simstick-update now requires the RCLL 2016 release!\nPlease see https://www.fawkesrobotics.org/projects/rcll2016-release to upgrade."
+		print_fail "$(basename $0)" "simstick-update now requires the RCLL 2016 release!\nPlease see https://www.fawkesrobotics.org/projects/rcll2016-release to upgrade."
 		exit 2
 fi
 
