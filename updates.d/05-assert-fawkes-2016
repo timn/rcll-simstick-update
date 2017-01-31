@@ -36,4 +36,3 @@ if [ ! -d "$FAWKES_DIR/src/agents/rcll2016" ]; then
 		exit 2
 fi
 
-popd > /dev/null
