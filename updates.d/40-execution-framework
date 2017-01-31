@@ -21,6 +21,9 @@
 
 # Assumes $SIMSTICK_UPDATE_PATH to be set by simstick-update (stage 0)
 
+# Disabled at this time
+exit 0
+
 source functions.sh
 print_sechead "Updating Execution Framework"
 
