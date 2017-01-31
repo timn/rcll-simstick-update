@@ -227,7 +227,7 @@ ros_detect()
 				return 3
 		fi
 		case $ROS_DISTRO in
-				hydro|indigo|jade|kame)
+				hydro|indigo|jade|kinetic)
 						echo "Detected compatible ROS $ROS_DISTRO"
 						;;
 				boxturtle|cturtle|diamondback|electric|fuerte|groovy)
