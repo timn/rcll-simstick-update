@@ -60,6 +60,11 @@ if compgen -G "$SIMSTICK_UPDATE_PATH/patches.d/fawkes-robotino-*.patch" > /dev/n
 				fi
 		done
 
+		if grep "CFLAGS_EXTRA += -m64 -march=generic -mtune=generic" etc/buildsys/config.mk; then
+			echo "Setting generic code optimization"
+			sed -i -e 's/CFLAGS_EXTRA  += -g/CFLAGS_EXTRA += -m64 -march=generic -mtune=generic -g/g' etc/buildsys/config.mk
+		fi
+
 		if [ -n "$DO_CLEAN" ]; then
 				echo "Cleaning software tree"
 				make -j4 clean || print_fail "$SCRIPT_NAME" "Failed to clean software"
