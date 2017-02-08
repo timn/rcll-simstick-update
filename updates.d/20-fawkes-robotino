@@ -36,46 +36,49 @@ pushd $FAWKES_DIR >/dev/null
 DO_CLEAN=
 DO_BUILD=
 if compgen -G "$SIMSTICK_UPDATE_PATH/patches.d/fawkes-robotino-*.patch" > /dev/null; then
-		echo "Checking for patches to apply"
-		for p in $SIMSTICK_UPDATE_PATH/patches.d/fawkes-robotino-*.patch; do
-				PATCH_NAME=$(basename $p)
+	echo "Checking for patches to apply"
+	for p in $SIMSTICK_UPDATE_PATH/patches.d/fawkes-robotino-*.patch; do
+		PATCH_NAME=$(basename $p)
 
-				if patch -p1 -N --dry-run --quiet <$p 2>&1 >/dev/null; then
-						echo "--- Applying patch $PATCH_NAME"
-						if patch -p1 -N <$p ; then
-								DO_BUILD=1
-								FLAGS_FILE="${p%.patch}.flags"
-								if [ -e "$FLAGS_FILE" ]; then
-										while read -r flags_line; do
-												if [ "$flags_line" == "clean" ]; then
-														DO_CLEAN=1
-												fi
-										done <"$FLAGS_FILE"
-								fi
-						else
-								print_fail "$SCRIPT_NAME" "Failed to apply patch $PATCH_NAME"
+		if patch -p1 -N --dry-run --quiet <$p 2>&1 >/dev/null; then
+			echo "--- Applying patch $PATCH_NAME"
+			if patch -p1 -N <$p ; then
+				DO_BUILD=1
+				FLAGS_FILE="${p%.patch}.flags"
+				if [ -e "$FLAGS_FILE" ]; then
+					while read -r flags_line; do
+						if [ "$flags_line" == "clean" ]; then
+							DO_CLEAN=1
 						fi
-				else
-						echo "Patch $PATCH_NAME already applied"
+					done <"$FLAGS_FILE"
 				fi
-		done
-
-		if grep "CFLAGS_EXTRA += -m64 -march=generic -mtune=generic" etc/buildsys/config.mk; then
-			echo "Setting generic code optimization"
-			sed -i -e 's/CFLAGS_EXTRA  += -g/CFLAGS_EXTRA += -m64 -march=generic -mtune=generic -g/g' etc/buildsys/config.mk
+			else
+				print_fail "$SCRIPT_NAME" "Failed to apply patch $PATCH_NAME"
+			fi
+		else
+			echo "Patch $PATCH_NAME already applied"
 		fi
-
-		if [ -n "$DO_CLEAN" ]; then
-				echo "Cleaning software tree"
-				make -j4 clean || print_fail "$SCRIPT_NAME" "Failed to clean software"
-		fi
-
-		if [ -n "$DO_BUILD" ]; then
-				echo "Building software"
-				make -j4 all gui || print_fail "$SCRIPT_NAME" "Failed to build software"
-		fi
+	done
 else
-		echo "No relevant patches found"
+	echo "No relevant patches found"
 fi
 
+if grep -q "CFLAGS_EXTRA  += -g" etc/buildsys/config.mk; then
+	echo
+	echo "*** Setting generic code optimization ***"
+	echo
+	sed -i -e 's/CFLAGS_EXTRA  += -g/CFLAGS_EXTRA += -m64 -mtune=generic -g/g' etc/buildsys/config.mk
+	DO_CLEAN=1
+	DO_BUILD=1
+fi
+
+if [ -n "$DO_CLEAN" ]; then
+	echo "Cleaning software tree"
+	make -j4 clean || print_fail "$SCRIPT_NAME" "Failed to clean software"
+fi
+
+if [ -n "$DO_BUILD" ]; then
+	echo "Building software"
+	make -j4 all gui || print_fail "$SCRIPT_NAME" "Failed to build software"
+fi
 popd > /dev/null
