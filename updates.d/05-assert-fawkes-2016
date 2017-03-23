@@ -35,3 +35,11 @@ if [ ! -d "$FAWKES_DIR/src/agents/rcll2016" ]; then
 		exit 2
 fi
 
+FAWKES_VERSION_MAJOR=$(grep "define FAWKES_VERSION_MAJOR" $FAWKES_DIR/fawkes/src/libs/core/version.h | sed -e 's/^#define FAWKES_VERSION_MAJOR  \([0-9]\+\)$/\1/')
+FAWKES_VERSION_MINOR=$(grep "define FAWKES_VERSION_MINOR" $FAWKES_DIR/fawkes/src/libs/core/version.h | sed -e 's/^#define FAWKES_VERSION_MINOR  \([0-9]\+\)$/\1/')
+FAWKES_VERSION_MICRO=$(grep "define FAWKES_VERSION_MICRO" $FAWKES_DIR/fawkes/src/libs/core/version.h | sed -e 's/^#define FAWKES_VERSION_MICRO  \([0-9]\+\)$/\1/')
+
+if [ "$FAWKES_VERSION_MAJOR.$FAWKES_VERSION_MINOR.$FAWKES_VERSION_MICRO" != "1.0.1" ]; then
+	print_fail "$(basename $0)" "Fawkes Robotino was created from a broken tarball. Please download and unpack again"
+	exit 3
+fi
