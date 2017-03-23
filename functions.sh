@@ -241,3 +241,81 @@ ros_detect()
 		return 0
 }
 
+patch_apply()
+{
+		local P=$1
+
+		if patch -p1 -N --dry-run --quiet <$P 2>&1 >/dev/null; then
+			if patch -p1 -N <$P ; then
+				return 0
+			else
+				return 2
+			fi
+		else
+			return 1
+		fi
+
+		return 3
+}
+
+patch_apply_all()
+{
+		local PATCHES=$@
+		local APPLIED_ANY=1
+
+		for p in $PATCHES; do
+				PATCH_NAME=$(basename $p)
+
+				if ! patch_check_applied $p; then
+						echo "--- Applying patch $PATCH_NAME"
+						if patch_apply $p; then
+								APPLIED_ANY=0
+						else
+								print_fail "$SCRIPT_NAME" "Failed to apply patch $PATCH_NAME"
+						fi
+				else
+						echo "Patch $PATCH_NAME already applied"
+				fi
+		done
+
+		return $APPLIED_ANY
+}
+
+patch_check_applied()
+{
+		local P=$1
+		if patch -p1 -N --dry-run --quiet <$P 2>&1 >/dev/null; then
+				return 1
+		else
+				return 0
+		fi
+}
+
+patch_check_needs_clean()
+{
+		local F=${1%.patch}.flags
+
+		if [ -e "$F" ]; then
+				while read -r flags_line; do
+						if [ "$flags_line" == "clean" ]; then
+								return 0
+						fi
+				done <"$F"
+		fi
+
+		return 1
+}
+
+patch_check_needs_clean_all()
+{
+		local PATCHES=$@
+		local APPLIED_ANY=1
+		
+		for p in $PATCHES; do
+				if patch_check_needs_clean $p; then
+						return 0
+				fi
+		done
+
+		return 1
+}
