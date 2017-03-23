@@ -35,32 +35,29 @@ pushd $FAWKES_DIR >/dev/null
 
 DO_CLEAN=
 DO_BUILD=
-if compgen -G "$SIMSTICK_UPDATE_PATH/patches.d/fawkes-robotino-*.patch" > /dev/null; then
-	echo "Checking for patches to apply"
-	for p in $SIMSTICK_UPDATE_PATH/patches.d/fawkes-robotino-*.patch; do
-		PATCH_NAME=$(basename $p)
 
-		if patch -p1 -N --dry-run --quiet <$p 2>&1 >/dev/null; then
-			echo "--- Applying patch $PATCH_NAME"
-			if patch -p1 -N <$p ; then
+if compgen -G "$SIMSTICK_UPDATE_PATH/patches.d/fawkes-core-*.patch" > /dev/null; then
+		pushd fawkes >/dev/null
+		if patch_apply_all $SIMSTICK_UPDATE_PATH/patches.d/fawkes-core-*.patch; then
 				DO_BUILD=1
-				FLAGS_FILE="${p%.patch}.flags"
-				if [ -e "$FLAGS_FILE" ]; then
-					while read -r flags_line; do
-						if [ "$flags_line" == "clean" ]; then
-							DO_CLEAN=1
-						fi
-					done <"$FLAGS_FILE"
-				fi
-			else
-				print_fail "$SCRIPT_NAME" "Failed to apply patch $PATCH_NAME"
-			fi
-		else
-			echo "Patch $PATCH_NAME already applied"
 		fi
-	done
+		if patch_check_needs_clean_all $SIMSTICK_UPDATE_PATH/patches.d/fawkes-core-*.patch; then
+				DO_CLEAN=1
+		fi
+		popd >/dev/null
 else
-	echo "No relevant patches found"
+	echo "No relevant patches found for Fawkes Core"
+fi
+
+if compgen -G "$SIMSTICK_UPDATE_PATH/patches.d/fawkes-robotino-*.patch" > /dev/null; then
+		if patch_apply_all $SIMSTICK_UPDATE_PATH/patches.d/fawkes-robotino-*.patch; then
+				DO_BUILD=1
+		fi
+		if patch_check_needs_clean_all $SIMSTICK_UPDATE_PATH/patches.d/fawkes-robotino-*.patch; then
+				DO_CLEAN=1
+		fi
+else
+	echo "No relevant patches found for Fawkes Robotino"
 fi
 
 if grep -q "CFLAGS_EXTRA  += -g" etc/buildsys/config.mk; then
