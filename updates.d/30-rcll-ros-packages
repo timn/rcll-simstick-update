@@ -5,24 +5,59 @@ print_sechead "Updating custom ROS packages"
 
 SCRIPT_NAME=$(basename $0)
 
-ROS_PACKAGES="fawkes_msgs rcll_ros_msgs rcll_fawkes_sim_msgs rcll_refbox_peer rcll_fawkes_sim"
+declare -A ROS_PACKAGES=(\
+	[fawkes_msgs]=https://git.fawkesrobotics.org/fawkes_msgs.git \
+	[rcll_ros_msgs]=https://github.com/timn/ros-rcll_ros_msgs.git \
+	[rcll_fawkes_sim_msgs]=https://github.com/timn/ros-rcll_fawkes_sim_msgs.git \
+	[rcll_fawkes_sim]=https://github.com/timn/ros-rcll_fawkes_sim.git \
+	[rcll_refbox_peer]=https://github.com/timn/ros-rcll_refbox_peer.git \
+	[occupancy_grid_utils]=https://github.com/clearpathrobotics/occupancy_grid_utils.git \
+	[mongodb_store]=https://github.com/strands-project/mongodb_store.git \
+	[rosplan]=https://github.com/timn/rosplan.git \
+	[rosplan_initial_situation]=https://github.com/timn/rosplan_initial_situation.git \
+	[rosplan_interface_behaviorengine]=https://github.com/timn/rosplan_interface_behaviorengine.git \
+	[rosplan_interface_rcllrefbox]=https://github.com/timn/rosplan_interface_rcllrefbox.git \
+	[rcll_ros]=https://github.com/timn/ros-rcll_ros.git \
+	)
 
 ros_detect || exit $?
 
-for p in $ROS_PACKAGES; do
+WSDIR=$(ros_workspace)
+
+if [ -z "$WSDIR" ]; then
+	print_fail "$SCRIPT_NAME" "Failed to determine workspace directory"
+	exit 1
+fi
+
+DO_BUILD=
+for p in "${!ROS_PACKAGES[@]}"; do
+	if [ ! -d $WSDIR/src/$p ]; then
+		echo -e "Cloning \033[1;34m$p\033[0m (${ROS_PACKAGES[$p]})"
+		pushd $WSDIR/src >/dev/null
+		if ! git_repo_clone ${ROS_PACKAGES[$p]} $p; then
+			popd >/dev/null
+			print_fail "$SCRIPT_NAME" "Failed to clone $p (${ROS_PACKAGES[$p]})"
+			exit 2
+		fi
+		popd >/dev/null
+		DO_BUILD=1
+	else
 		echo
 		echo -e "Checking update for \033[1;34m$p\033[0m"
-		ros_package_assert $p || exit $?
-		p_dir=$(ros_package_dir $p) || exit $?
-		ws_dir=$(realpath "$p_dir/../..")
-		pushd $p_dir >/dev/null
+		pushd $WSDIR/src/$p >/dev/null
 
-		pwd
-		
 		git_repo_check || exit $?
 		git_repo_stash || exit $?
 		git_repo_fetch || exit $?
-		git_repo_pull_cond_build "catkin_make -C $ws_dir --force-cmake --pkg $p" || exit $?
+		if git_repo_changed; then DO_BUILD=1; fi
+		git_repo_pull no-fetch || exit $?
 
 		popd >/dev/null
+	fi
+
 done
+
+if [ "$DO_BUILD" == "1" ]; then
+	catkin_make -C $WSDIR --force-cmake || exit $?
+fi
+
