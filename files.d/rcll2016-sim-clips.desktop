@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Terminal=false
+Name=RCLL Simulation with CLIPS
+Exec=simstick-run clips
+Icon=rcll2016-sim-icon-clips
