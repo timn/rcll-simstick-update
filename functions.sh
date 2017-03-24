@@ -93,6 +93,21 @@ git_repo_changed()
 		fi
 }
 
+git_repo_clone()
+{
+	URL=$1
+	DIR=$2
+	if [ -d $DIR ]; then
+		print_fail "git_repo_clone" "Target directory $DIR already exists"
+		return 1
+	fi
+	if ! git clone --recursive $URL $DIR; then
+		print_fail "git_repo_clone" "Failed to clone from $URL"
+		return 2
+	fi
+
+	return 0
+}
 
 # Fetch from remote and integrate changes in current directory
 git_repo_pull()
