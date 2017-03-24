@@ -1,0 +1,87 @@
+#!/bin/bash
+
+##########################################################################
+#  simstick-prep-clean - prepare image generation by cleaning
+#
+#  Created: Fri Mar 24 11:43:49 2017
+#  Copyright  2016-2017  Tim Niemueller
+##########################################################################
+
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation; either version 2 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU Library General Public License for more details.
+#
+#  Read the full text in the LICENSE.GPL file in the doc directory.
+
+SIMSTICK_UPDATE_PATH=$(readlink -f $(dirname $(readlink -f ${BASH_SOURCE[0]}))/..)
+source $SIMSTICK_UPDATE_PATH/functions.sh
+
+print_sechead "CLEANUP FOR IMAGE GENERATION"
+echo
+echo "This will clear the USB stick of files that are considered temporary."
+echo "It is intended to be run before pulling an image off a USB stick."
+echo
+echo "ATTENTION: this may erase files you do not want to erase. Only continue"
+echo "           if you know what you are doing and are certain."
+echo
+echo "Press enter to continue, or Ctrl-C to abort"
+echo
+read
+
+
+print_sechead "Cleaning Compiler Cache"
+ccache -C
+
+print_sechead "Cleaning up projects using the Fawkes build system"
+for p in fawkes-robotino gazebo-rcll llsf-refbox; do
+	echo "- cleaning $p"
+	pushd $HOME/robotics/$p >/dev/null
+	find . -name '.deps_*' -prune -exec rm -rf {} \;
+	find . -name '.objs_*' -prune -exec rm -rf {} \;
+	popd >/dev/null
+done
+
+print_sechead "Cleaning up ROS build-only files"
+rm -rf /opt/ros/catkin_ws_*/build_isolated
+rm -rf $HOME/robotics/ros/catkin_ws_*/build
+rm -rf $HOME/.ros
+
+print_sechead "Cleaning package manager files"
+sudo dnf clean all
+sudo rm -rf /var/cache/PackageKit/*
+
+
+print_sechead "Cleaning confidential data"
+
+echo "- Cleaning wifi passwords"
+for f in $(grep -l ESSID /etc/sysconfig/network-scripts/ifcfg-*); do \
+	echo "  - ${f##*-}"
+  sudo rm -rf $f; \
+  sudo rm -rf $(dirname $f)/keys-${f##*-} \;
+done
+
+echo "- Removing bash history"
+rm -f ~/.bash_history
+
+echo "- Cleaning Firefox cache"
+rm -f ~/.mozilla/firefox/*.default/cookies.sqlite
+rm -f ~/.mozilla/firefox/*.default/*.sqlite
+rm -f ~/.mozilla/firefox/*default/sessionstore.js
+rm -rf ~/.cache/mozilla/firefox/*.default/*
+
+echo "- Cleaning up Chrome cache"
+rm -rf ~/.cache/google-chrome
+find ~/.config/google-chrome -name '*Cookie*' -prune -exec rm -rf {} \;
+find ~/.config/google-chrome -name '*History*' -prune -exec rm -rf {} \;
+find ~/.config/google-chrome -name '*Current*' -prune -exec rm -rf {} \;
+
+echo "- Cleaning logs"
+sudo find /var/log/ -name '*.log-*' -prune -exec rm -rf {} \;
+sudo journalctl --flush --rotate
+sudo journalctl --vacuum-time=1s
