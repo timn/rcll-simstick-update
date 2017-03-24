@@ -19,18 +19,32 @@
 #
 #  Read the full text in the LICENSE.GPL file in the doc directory.
 
-echo "**************************************************************************"
-echo "Running Software with default arguments"
-echo "**************************************************************************"
-echo
+SIMSTICK_UPDATE_PATH=$(readlink -f $(dirname $(readlink -f ${BASH_SOURCE[0]}))/..)
+source $SIMSTICK_UPDATE_PATH/functions.sh
 
-echo "Warnings about unreachable services are normal and expected."
-echo "They appear because of running with a smaller number of robots."
-echo
+MODE=$1
 
-pushd ~/robotics/fawkes-robotino/bin >/dev/null
-./gazsim.bash -x start -r -n 1 -t -a
+print_sechead "RUN SIMULATION"
 
-#	--ros-launch-main rcll_fawkes_sim:rcll_fawkes_sim_all_1robot.launch
+if [ -z "$FAWKES_DIR" ]; then
+	print_fail "simstick-run" "FAWKES_DIR not set"
+	exit 1
+fi
+
+pushd $FAWKES_DIR/bin >/dev/null
+
+case $MODE in
+	clips)
+		echo "Running CLIPS Agent"
+		./gazsim.bash -n 3 -t -r -a --team-cyan Carologistics --start-game
+		;;
+	rosplan-1)
+		echo "Running single-robot ROSPlan"
+		./gazsim.bash -n 1 -t -r --ros-launch-main rcll_ros:rosplan_production_1robot_rqt.launch --team-cyan Carologistics --start-game
+		;;
+	*)
+		print_fail "simstick-run" "Unknown game configuration to start"
+		;;
+esac
+
 popd >/dev/null
-
