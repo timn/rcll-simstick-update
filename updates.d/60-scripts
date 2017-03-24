@@ -27,7 +27,8 @@ print_sechead "Script installation"
 SCRIPT_NAME=$(basename $0)
 
 for s in $SIMSTICK_UPDATE_PATH/scripts.d/???*; do
-		SCRIPT_NAME=$(basename $s)
+	SCRIPT_NAME=$(basename $s)
+	if [ ${s: -1} != "~" ]; then
 		echo -n "Checking $SCRIPT_NAME..."
 		if [ -L "$HOME/bin/$SCRIPT_NAME" ]; then
 				echo "already installed"
@@ -36,4 +37,5 @@ for s in $SIMSTICK_UPDATE_PATH/scripts.d/???*; do
 				ln -s $s "$HOME/bin/$SCRIPT_NAME" || ( echo "FAILED" && exit -1 )
 				echo "done"
 		fi
+	fi
 done
