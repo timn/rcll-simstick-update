@@ -213,10 +213,18 @@ print_sechead()
 
 ros_package_assert()
 {
+	if ! ros_package_exists "$1"; then
+		print_fail "ros_package_assert" "Could not find package $ROS_PACKAGE"
+		return 1
+	fi
+	return 0
+}
+
+ros_package_exists()
+{
 		local ROS_PACKAGE=$1
 
 		if ! rospack find $ROS_PACKAGE >/dev/null 2>&1 ; then
-				print_fail "ros_detect" "Could not find package $ROS_PACKAGE"
 				return 1
 		fi
 		return 0
@@ -258,6 +266,24 @@ ros_detect()
 						;;
 		esac
 		return 0
+}
+
+ros_workspace()
+{
+	if [ -n "$ROS_WORKSPACE" ]; then
+		echo $ROS_WORKSPACE
+		return 0
+	fi
+	if [ -n "$CMAKE_PREFIX_PATH" ]; then
+		IFS=":" read -a workspaces <<< "$CMAKE_PREFIX_PATH";
+		for ws in "${workspaces[@]}"; do
+			if [ -e "$ws/../.catkin_workspace" ]; then
+				echo $(readlink -f "$ws/..")
+				return 0
+			fi
+		done
+	fi
+	return 1
 }
 
 patch_apply()
