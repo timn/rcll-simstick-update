@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Terminal=false
+Name=RCLL Simulation with ROSPlan
+Exec=simstick-run rosplan-1
+Icon=rcll2016-sim-icon-rosplan
