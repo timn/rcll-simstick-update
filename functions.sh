@@ -21,9 +21,9 @@
 # Pront failure message
 print_fail()
 {
-		local COMPONENT=$1
-		local MESSAGE=$2
-		>&2 echo -e "\033[1;31mFAIL|$COMPONENT:\033[0m $MESSAGE"
+	local COMPONENT=$1
+	local MESSAGE=$2
+	>&2 echo -e "\033[1;31mFAIL|$COMPONENT:\033[0m $MESSAGE"
 }
 
 # Check if script dir (current directory assumed to be just that)
@@ -70,22 +70,26 @@ git_repo_stash()
 
 git_repo_changed()
 {		
-		local LOCAL_HEAD=$(git rev-parse @)      || return 1
-		local REMOTE_HEAD=$(git rev-parse @{u})  || return 1
-		local BASE_HEAD=$(git merge-base @ @{u}) || return 1
+		local LOCAL_HEAD=$(git rev-parse @)      || return 2
+		local REMOTE_HEAD=$(git rev-parse @{u})  || return 2
+		local BASE_HEAD=$(git merge-base @ @{u}) || return 2
 
-		[ -n "$LOCAL_HEAD" ]  || return 2
-		[ -n "$REMOTE_HEAD" ] || return 2
-		[ -n "$BASE_HEAD" ]   || return 2
+		[ -n "$LOCAL_HEAD" ]  || return 3
+		[ -n "$REMOTE_HEAD" ] || return 3
+		[ -n "$BASE_HEAD" ]   || return 3
 		
 		if [ $LOCAL_HEAD = $REMOTE_HEAD ]; then
 				echo up-to-date
+				return 1
 		elif [ $LOCAL_HEAD = $BASE_HEAD ]; then
 				echo pull
+				return 0
 		elif [ $REMOTE_HEAD = $BASE_HEAD ]; then
 				echo push
+				return 0
 		else
 				echo diverged
+				return 0
 		fi
 }
 
