@@ -71,11 +71,11 @@ fi
 
 if [ -n "$DO_CLEAN" ]; then
 	echo "Cleaning software tree"
-	make -j4 clean || print_fail "$SCRIPT_NAME" "Failed to clean software"
+	make -j$(nproc) clean || print_fail "$SCRIPT_NAME" "Failed to clean software"
 fi
 
 if [ -n "$DO_BUILD" ]; then
 	echo "Building software"
-	make -j4 all gui || print_fail "$SCRIPT_NAME" "Failed to build software"
+	make -j$(nproc) all gui || print_fail "$SCRIPT_NAME" "Failed to build software"
 fi
 popd > /dev/null
