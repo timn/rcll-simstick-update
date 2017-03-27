@@ -33,6 +33,10 @@ fi
 
 pushd $FAWKES_DIR/bin >/dev/null
 
+echo "Switching to default world for demo mode"
+OLD_WORLD=$GAZEBO_WORLD_PATH
+export GAZEBO_WORLD_PATH=$GAZEBO_RCLL/worlds/carologistics/llsf-default.world
+
 case $MODE in
 	clips)
 		echo "Running CLIPS Agent"
