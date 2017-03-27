@@ -85,3 +85,7 @@ echo "- Cleaning logs"
 sudo find /var/log/ -name '*.log-*' -prune -exec rm -rf {} \;
 sudo journalctl --flush --rotate
 sudo journalctl --vacuum-time=1s
+
+print_sechead "Cleaning old ROSPlan MongoDB data"
+rm -rf $(rospack find rosplan_knowledge_base)/common/mongoDB/*
+
