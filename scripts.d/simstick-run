@@ -44,7 +44,7 @@ case $MODE in
 		;;
 	rosplan-1)
 		echo "Running single-robot ROSPlan"
-		./gazsim.bash -n 1 -t -r --ros-launch-main rcll_ros:rosplan_production_1robot_rqt.launch --team-cyan Carologistics --start-game
+		./gazsim.bash -n 1 -t -r --ros-launch-main rcll_ros:rosplan_production_standalone_rqt.launch --team-cyan Carologistics --start-game
 		;;
 	*)
 		print_fail "simstick-run" "Unknown game configuration to start"
