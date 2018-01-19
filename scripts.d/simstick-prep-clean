@@ -48,8 +48,8 @@ for p in fawkes-robotino gazebo-rcll llsf-refbox; do
 done
 
 print_sechead "Cleaning up ROS build-only files"
-rm -rf /opt/ros/catkin_ws_*/build_isolated
-rm -rf $HOME/robotics/ros/catkin_ws_*/build
+rm -rf /opt/ros/*_ws/build_isolated
+rm -rf $HOME/robotics/ros/*_ws/build
 rm -rf $HOME/.ros
 
 print_sechead "Cleaning package manager files"
