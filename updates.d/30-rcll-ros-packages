@@ -22,7 +22,7 @@ declare -A ROS_PACKAGES=(\
 
 ros_detect || exit $?
 
-WSDIR=$(ros_workspace)
+WSDIR=$(ros_workspace rcll)
 
 if [ -z "$WSDIR" ]; then
 	print_fail "$SCRIPT_NAME" "Failed to determine workspace directory"
