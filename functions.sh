@@ -270,6 +270,7 @@ ros_detect()
 
 ros_workspace()
 {
+	local W=$1
 	if [ -n "$ROS_WORKSPACE" ]; then
 		echo $ROS_WORKSPACE
 		return 0
@@ -278,8 +279,11 @@ ros_workspace()
 		IFS=":" read -a workspaces <<< "$CMAKE_PREFIX_PATH";
 		for ws in "${workspaces[@]}"; do
 			if [ -e "$ws/../.catkin_workspace" ]; then
-				echo $(readlink -f "$ws/..")
-				return 0
+				ws_dir=$(readlink -f "$ws/..")
+				if [[ "${ws_dir##*/}" == *$W* ]]; then
+					echo $ws_dir
+					return 0
+				fi
 			fi
 		done
 	fi
