@@ -1,0 +1,14 @@
+update_type: 1
+knowledge:
+  knowledge_type: 1
+  instance_type: ''
+  instance_name: ''
+  attribute_name: wp-base-color
+  values:
+    - key: wp
+      value: wp1
+    - key: col
+      value: BASE_RED
+  function_value: 0.0
+  is_negative: false
+

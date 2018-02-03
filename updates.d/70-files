@@ -28,6 +28,7 @@ SCRIPT_NAME=$(basename $0)
 
 cp -af $SIMSTICK_UPDATE_PATH/files.d/logrobtut-aaai2018.pdf $HOME/Documents
 cp -af $SIMSTICK_UPDATE_PATH/files.d/ariac-tutorial.pdf $HOME/Documents
+cp -af $SIMSTICK_UPDATE_PATH/files.d/goal*.yaml $HOME/Documents
 
 # Solution to be completed, requires additional settings, e.g., to
 # define target location, mode, whether this must be done as root etc.

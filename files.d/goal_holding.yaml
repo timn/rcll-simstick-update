@@ -1,0 +1,14 @@
+update_type: 1
+knowledge:
+  knowledge_type: 1
+  instance_type: ''
+  instance_name: ''
+  attribute_name: holding
+  values:
+    - key: r
+      value: R-1
+    - key: wp
+      value: wp1
+  function_value: 0.0
+  is_negative: false
+
