@@ -1,0 +1,46 @@
+#!/bin/bash
+
+##########################################################################
+#  files - copy files
+#
+#  Created: Sat Feb 03 06:33:28 2018
+#  Copyright  2016-2018  Tim Niemueller [www.niemueller.de]
+##########################################################################
+
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation; either version 2 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU Library General Public License for more details.
+#
+#  Read the full text in the LICENSE.GPL file in the doc directory.
+
+# Assumes $SIMSTICK_UPDATE_PATH to be set by simstick-update (stage 0)
+
+source functions.sh
+print_sechead "Copying Extra Files"
+
+SCRIPT_NAME=$(basename $0)
+
+cp -af $SIMSTICK_UPDATE_PATH/files.d/logrobtut-aaai2018.pdf $HOME/Documents
+cp -af $SIMSTICK_UPDATE_PATH/files.d/ariac-tutorial.pdf $HOME/Documents
+
+# Solution to be completed, requires additional settings, e.g., to
+# define target location, mode, whether this must be done as root etc.
+# for s in $SIMSTICK_UPDATE_PATH/files.d/???*; do
+# 	FILE_NAME=$(basename $s)
+# 	if [ ${s: -1} != "~" ]; then
+# 		echo -n "Checking $SCRIPT_NAME..."
+# 		if [ -L "$HOME/bin/$SCRIPT_NAME" ]; then
+# 				echo "already installed"
+# 		else
+# 				echo -n "installing..."
+# 				ln -s $s "$HOME/bin/$SCRIPT_NAME" || ( echo "FAILED" && exit -1 )
+# 				echo "done"
+# 		fi
+# 	fi
+# done
